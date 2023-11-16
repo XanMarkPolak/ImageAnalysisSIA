@@ -25,7 +25,8 @@ import SysConfigSIA
 
 
 class ProcessImagesSIA:
-    experiment_binary_img = None
+    experiment_bitumen_binary_img = None
+    experiment_other_binary_img = None  # Binary image for non-bitumen objects (air, sand, unknown)
 
     # Config Loaded from JSON file
     image_scale = 0
@@ -87,8 +88,10 @@ class ProcessImagesSIA:
 
         width_roi = width - (self.bad_left_edge + self.bad_right_edge)
         try:
-            # Attempt to create a large 8-bit image for segmented object for entire experiment
-            self.experiment_binary_img = np.zeros((height * num_of_image_sets, width_roi), dtype=np.uint8)
+            # Attempt to create large 8-bit images for segmented object for entire experiment.  One large
+            # image for bitumen objects and the other for non-bitumen objects.
+            self.experiment_bitumen_binary_img = np.zeros((height * num_of_image_sets, width_roi), dtype=np.uint8)
+            self.experiment_other_binary_img = np.zeros((height * num_of_image_sets, width_roi), dtype=np.uint8)
             print("Memory allocation for the large image was successful.")
         except MemoryError as err:
             write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__,
@@ -116,12 +119,15 @@ class ProcessImagesSIA:
             image_nir = img_nir_full[:, SysConfigSIA.BAD_EDGE_LEFT:(width - SysConfigSIA.BAD_EDGE_RIGHT)]
 
             target_row = height * img_num
-            self.experiment_binary_img[target_row:target_row + height, :] = segment_image_set_obj_by_nir(image_vis,
-                                                                                                         image_nir)
+            self.experiment_bitumen_binary_img[target_row:target_row + height, :], \
+                self.experiment_other_binary_img[target_row:target_row + height, :] = \
+                segment_image_set_obj_by_nir(image_vis, image_nir)
+
             end_time = time.time()
             elapsed_time = end_time - start_time
             print("        Image", img_num, "elapsed time = ", elapsed_time)
-        cv2.imwrite("out.png", self.experiment_binary_img)
+        cv2.imwrite("out_dark.png", self.experiment_bitumen_binary_img)
+        cv2.imwrite("out_light.png", self.experiment_other_binary_img)
 
     def write_csv_files(self):
         # Configuration file must be loaded in order to calculate object properties in real units that are written
@@ -132,8 +138,9 @@ class ProcessImagesSIA:
                      SysConfigSIA.FIRST_IMAGE_NAME_SAMPLE_CHARACTER:SysConfigSIA.LAST_IMAGE_NAME_SAMPLE_CHARACTER + 1]
             csv_file = "LSCAN-Res-" + fn_str + "-Objects.csv"
             summary_csv_file = "LSCAN-Res-" + fn_str + "-Summary.csv"
-            object_properties_to_csv(self.experiment_binary_img, csv_file, self.image_scale, self.line_scan_rate,
-                                     self.calc_summary_stats, summary_csv_file)
+            object_properties_to_csv(self.experiment_bitumen_binary_img, self.experiment_other_binary_img,
+                                     csv_file, self.image_scale, self.line_scan_rate, self.calc_summary_stats,
+                                     summary_csv_file)
 
 
 def get_file_list_and_verify_correct_files_exist(image_folder, start_frame_character, end_frame_character,
@@ -256,18 +263,24 @@ def get_file_list_and_verify_correct_files_exist(image_folder, start_frame_chara
     return vis_image_files, nir_image_files
 
 
-def object_properties_to_csv(binary_image, csv_file, image_scale, line_scan_rate, create_summary_stats,
-                             summary_csv_file=None):
-    if binary_image is None:
-        write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__, SysConfigSIA.ERROR_CODE_UNABLE_TO_WRITE_CSV_FILE,
-                            f"Error.  Unable to write results to CSV file.  "
-                            f"Binary image not passed to object_properties_to_csv .")
-        return
-    if csv_file == "":
-        write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__, SysConfigSIA.ERROR_CODE_UNABLE_TO_WRITE_CSV_FILE,
-                            f"Error.  Unable to write results to CSV file.  "
-                            f"CSV file name not passed to object_properties_to_csv .")
-        return
+def get_object_properties_from_binary_image(binary_image, obj_type, image_scale, line_scan_rate):
+    """
+    Calculate properties of objects in a binary image.
+    This is a support function that is called from object_properties_to_csv().
+
+    Parameters:
+    - binary_image (ndarray): Binary image containing segmented objects.
+    - obj_type (str): Type of the object (e.g., 'BIT' (bitumen), 'SND' (sand), etc.).
+    - image_scale (float): Scaling factor to convert pixel dimensions to physical dimensions (um).
+    - line_scan_rate (float): Line scan rate in pixels per second.
+
+    Returns:
+    list: A list containing properties of each object in the following format:
+    [
+        [centroid_x, centroid_y, area, speed, obj_type, major_axis, minor_axis, orientation,
+         solidity, eccentricity, diameter]
+    ]
+    """
 
     # Label the objects in the binary image
     labeled_image = measure.label(binary_image, connectivity=2)
@@ -275,13 +288,16 @@ def object_properties_to_csv(binary_image, csv_file, image_scale, line_scan_rate
     # Calculate region properties using scikit-image's regionprops
     props = measure.regionprops(labeled_image)
 
-    ski_props_list = []
-
     speed_constant = line_scan_rate / 1000
+
+    ski_props_list = []
 
     for obj_props in props:
         major = obj_props.major_axis_length
         minor = obj_props.minor_axis_length
+
+        # Equations were originally written with orientation 0 being from horizontal axis.  In regionprops(),
+        # orientation of 0 is vertical.  Easiest fix was to add PI/2 to the orientation.
         fixed_orient = obj_props.orientation + 1.570796327
 
         min_row, min_col, max_row, max_col = obj_props.bbox
@@ -299,7 +315,7 @@ def object_properties_to_csv(binary_image, csv_file, image_scale, line_scan_rate
             obj_props.centroid[0],
             obj_props.area,
             speed,
-            "BIT",
+            obj_type,
             major,
             minor,
             obj_props.orientation,
@@ -307,6 +323,54 @@ def object_properties_to_csv(binary_image, csv_file, image_scale, line_scan_rate
             obj_props.eccentricity,
             diameter
         ])
+    return ski_props_list
+
+
+def object_properties_to_csv(binary_bitumen_image, binary_non_bitumen_image, csv_file, image_scale, line_scan_rate,
+                             create_summary_stats, summary_csv_file=None):
+    """
+     Extract object properties from binary images and write the results to CSV files.
+
+     Parameters:
+     - binary_bitumen_image (ndarray): Binary image containing segmented bitumen objects.
+     - binary_non_bitumen_image (ndarray): Binary image containing segmented non-bitumen (sand, air, unknown) objects.
+     - csv_file (str): Path to the target CSV file to store the object properties.
+     - image_scale (float): Scaling factor to convert pixel dimensions to physical dimensions (um/pix).
+     - line_scan_rate (float): Line scan rate in pixels per second.
+     - create_summary_stats (bool): Flag indicating whether to calculate and write summary statistics.
+     - summary_csv_file (str, optional): Path to the target CSV file for summary statistics.
+
+     Returns:
+     None
+
+     Notes:
+     - The function creates a temporary file ('tmp.txt') initially, to avoid the SIA control system reading a partially
+        written CSV file in case of a program crash, and then renames the 'tmp.txt' file to the specified CSV file
+        name.
+     - Object properties are calculated by calling the 'get_object_properties_from_binary_image()' function.
+     - Summary statistics include the number of objects, average diameter, and average speed for each object type.
+     - Summary statistics include cumulative percent passing by diameter for bitumen objects.
+     - Summary statistics are written to a separate temporary file ('tmp_sum.txt') and then renamed to the
+        specified CSV file name.
+
+     """
+
+    if binary_bitumen_image is None or binary_non_bitumen_image is None:
+        write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__, SysConfigSIA.ERROR_CODE_UNABLE_TO_WRITE_CSV_FILE,
+                            f"Error.  Unable to write results to CSV file.  "
+                            f"Binary image set not passed to object_properties_to_csv() .")
+        return
+    if csv_file == "":
+        write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__, SysConfigSIA.ERROR_CODE_UNABLE_TO_WRITE_CSV_FILE,
+                            f"Error.  Unable to write results to CSV file.  "
+                            f"CSV file name not passed to object_properties_to_csv() .")
+        return
+
+    # Get the object properties for the binary image of bitumen objects and light colored objects passed in.
+    bitumen_props_list = get_object_properties_from_binary_image(binary_bitumen_image, "BIT", image_scale,
+                                                                 line_scan_rate)
+    other__obj_props_list = get_object_properties_from_binary_image(binary_non_bitumen_image, "UNK", image_scale,
+                                                                    line_scan_rate)
 
     # Initially write the results to temporary file "tmp.txt".  This temporary file is created instead of the
     # properly named target CSV file so that in case the program crashes or is killed, the control software
@@ -321,7 +385,8 @@ def object_properties_to_csv(binary_image, csv_file, image_scale, line_scan_rate
                  "MinorAxisLength(pix)", "Orientation(rad)", "Solidity", "Eccentricity", "Diameter(um)"])
 
             # Write the data
-            writer_obj.writerows(ski_props_list)
+            writer_obj.writerows(bitumen_props_list)
+            writer_obj.writerows(other__obj_props_list)
     except Exception as e:
         write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__, SysConfigSIA.ERROR_CODE_UNABLE_TO_WRITE_CSV_FILE,
                             f"Error.  Unable to write results to CSV file.  "
@@ -344,14 +409,14 @@ def object_properties_to_csv(binary_image, csv_file, image_scale, line_scan_rate
     # Check if summary statistics are to be calculated and written to a CSV file.
     #
     if create_summary_stats and summary_csv_file is not None:
-        num_of_bit_obj = len(ski_props_list)
+        num_of_bit_obj = len(bitumen_props_list)
 
         # Assuming ski_props_list has diameters as the last element, extract all the diameter measurement.
-        diameters = [obj[-1] for obj in ski_props_list]
+        diameters = [obj[-1] for obj in bitumen_props_list]
         avg_diameter = np.mean(diameters)
 
         # Assuming ski_props_list has speed as the index=3 element, extract all the diameter measurement.
-        speeds = [obj[3] for obj in ski_props_list]
+        speeds = [obj[3] for obj in bitumen_props_list]
         avg_speed = np.mean(speeds)
 
         # Convert diameters to a sorted NumPy array

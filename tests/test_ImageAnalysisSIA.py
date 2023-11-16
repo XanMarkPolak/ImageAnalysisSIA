@@ -206,14 +206,15 @@ def test_object_properties_to_csv_creation(csv_object_file, csv_summary_file):
                              [0, 1, 0]])
 
     # Call the function
-    object_properties_to_csv(binary_image, csv_object_file, 7.797271, 4000, True, csv_summary_file)
+    object_properties_to_csv(binary_image, binary_image, csv_object_file, 7.797271, 4000, True, csv_summary_file)
 
     # Check if the CSV files were created
     assert csv_object_file.exists()
     assert csv_summary_file.exists()
 
 
-# Test object_properties_to_csv() for one large object to make sure the expected content is written into the CSV file.
+# Test object_properties_to_csv() for one large object in each binary image to make sure the expected content
+# is written into the CSV file.
 def test_object_properties_to_csv_one_object(csv_object_file):
     # Create a test binary image
     binary_image = np.array([[0, 255, 255, 255, 0],
@@ -231,7 +232,7 @@ def test_object_properties_to_csv_one_object(csv_object_file):
                              [0, 255, 255, 255, 0]])
 
     # Call the function
-    object_properties_to_csv(binary_image, csv_object_file, 7.797271, 4000, False)
+    object_properties_to_csv(binary_image, binary_image, csv_object_file, 7.797271, 4000, False)
 
     # Read the CSV file to verify its contents
     with open(csv_object_file, "r") as file:
@@ -243,11 +244,14 @@ def test_object_properties_to_csv_one_object(csv_object_file):
                            "MinorAxisLength(pix)", "Orientation(rad)", "Solidity", "Eccentricity", "Diameter(um)"]
 
         # This is the expected result from "measure.regionprops()" function in skimage library
-        expected_data_row = ['2.0', '6.0', '39.0', '7.835624753313121', 'BIT', '14.966629547095765',
+        expected_data_row1 = ['2.0', '6.0', '39.0', '7.835624753313121', 'BIT', '14.966629547095765',
                              '3.265986323710904', '0.0', '1.0', '0.9759000729485332', '25.465780448267644']
+        expected_data_row2 = ['2.0', '6.0', '39.0', '7.835624753313121', 'UNK', '14.966629547095765',
+                              '3.265986323710904', '0.0', '1.0', '0.9759000729485332', '25.465780448267644']
 
         assert rows[0] == expected_header
-        assert rows[1] == expected_data_row
+        assert rows[1] == expected_data_row1
+        assert rows[2] == expected_data_row2
 
 
 # Test object_properties_to_csv() for 3 objects to make sure the expected content is written into the CSV files.
@@ -272,7 +276,7 @@ def test_object_properties_to_csv_and_csv_summary(csv_object_file, csv_summary_f
 
     # Call the function
     object_properties_to_csv(
-        binary_image, csv_object_file, image_scale=1.0, line_scan_rate=1000,
+        binary_image, binary_image, csv_object_file, image_scale=1.0, line_scan_rate=1000,
         create_summary_stats=True, summary_csv_file=csv_summary_file
     )
 
@@ -292,11 +296,20 @@ def test_object_properties_to_csv_and_csv_summary(csv_object_file, csv_summary_f
                               '4.47213595499958', '0.7853981633974483', '1.0', '0.0', '4.47213595499958']
         expected_data_row3 = ['2.0', '13.0', '25.0', '1.1313708498984762', 'BIT', '5.656854249492381',
                               '5.656854249492381', '0.7853981633974483', '1.0', '0.0', '5.6568542494923815']
+        expected_data_row4 = ['2.0', '1.0', '9.0', '1.0886621079036347', 'UNK', '3.265986323710904',
+                              '3.265986323710904', '0.7853981633974483', '1.0', '0.0', '3.265986323710904']
+        expected_data_row5 = ['2.5', '6.5', '16.0', '1.118033988749895', 'UNK', '4.47213595499958',
+                              '4.47213595499958', '0.7853981633974483', '1.0', '0.0', '4.47213595499958']
+        expected_data_row6 = ['2.0', '13.0', '25.0', '1.1313708498984762', 'UNK', '5.656854249492381',
+                              '5.656854249492381', '0.7853981633974483', '1.0', '0.0', '5.6568542494923815']
 
         assert rows[0] == expected_header
         assert rows[1] == expected_data_row1
         assert rows[2] == expected_data_row2
         assert rows[3] == expected_data_row3
+        assert rows[4] == expected_data_row4
+        assert rows[5] == expected_data_row5
+        assert rows[6] == expected_data_row6
 
     # Check if the summary CSV file was created
     assert csv_summary_file.exists()
