@@ -171,3 +171,164 @@ def segment_image_set_obj_by_nir(image_vis, image_nir):
 
     return new_dark_binary_image, new_light_binary_image
 
+
+def segment_image_set_by_vis_img(image_vis, image_nir):
+    """
+     Segment an image set by detecting objects using visual RGB (VIS) image and then using the near infrared (NIR)
+     image to correct the segmentation.
+
+     Parameters:
+    - image_vis (numpy.ndarray): RGB color image.
+    - image_nir (numpy.ndarray): Corresponding 8-bit NIR image.
+
+     Returns:
+     - numpy.ndarray: Binary image with detected dark objects.
+     - numpy.ndarray: Binary image with detected light objects.
+
+     Algorithm Steps:
+    1. Input Validation:
+        Check if the input images (image_vis and image_nir) are loaded successfully. If not, return None for both
+        binary images.
+    2. Background Separation:
+        Use a Gaussian background model on each column of the NIR image for background separation.
+        Apply custom thresholding using a Gaussian background model in two passes (k_level1 and k_level2).
+    3. Calculate Column-wise Statistics for Background:
+        For each column, calculate the average background intensity in the RGB image separately for red, green, and
+        blue channels, using only background pixels defined by the object mask created from the NIR image.
+    4. Generate Difference Images:
+        Find the difference in each column and channel between the average background and pixel values in the RGB image.
+        For dark objects, use the maximum difference to identify these objects.
+        For light objects, use the minimum difference because they are distinct.
+    5. Thresholding:
+        Threshold the difference images obtained in the previous step using a low threshold (thresh_level) to ensure
+        identification of any pixels belonging to an object.
+        Apply a mask created from the background model to eliminate artifacts left over from the threshold operation.
+    6.  Fill Holes:
+        Fill holes in the binary images to complete objects.
+    7. Morphological Operations:
+        Perform morphological "open" operation to eliminate small objects.
+    8. Return Results:
+        Return the binary images representing dark and light objects.
+
+     Note:
+     - The function utilizes custom functions from the ImageProcSupport module for background detection and corrections.
+
+     Example Usage:
+     ```
+     result_dark_binary_image, result_other_binary_image = segment_image_set_by_vis_img(rgb_image, nir_image)
+     ```
+
+     """
+    # Check if the image was loaded successfully
+    if image_vis is None or image_nir is None:
+        return None, None
+
+    # Get the dimensions of the image
+    height, width, channel = image_vis.shape
+
+    #
+    # Get a background/foreground separation of the NIR image using background detection model that is based on
+    # Gaussian method on each individual column.
+    #
+
+    # Apply custom thresholding using Gaussian background model
+    # This is the first pass, so variance in the Gaussian model will be high because both background and object
+    # pixels are used in calculation.
+    k = 2.0  # Typically k would be 2.5, but want to make sure we don't miss pixels of objects.
+    mask_level1 = ipsSIA.find_objects_column_gaussian(image_nir, k, None)
+
+    # Apply custom thresholding using Gaussian background model for a second pass.  The object mask generated
+    # in the first pass is used to mask our object pixels, so mostly background pixels should be included.
+    # Because only background pixels are included, the variance of pixel intensity will be low, and as a
+    # result the Z score calculated for each pixel in each column will be higher and so a higher k value is needed.
+    k = 4.0  # Need to increase k because variance is now reduced
+    mask_level2 = ipsSIA.find_objects_column_gaussian(image_nir, k, mask_level1)
+
+    # Initialize lists to store column-wise statistics for each color channel
+    avg_intensity_red_per_column = []
+    avg_intensity_green_per_column = []
+    avg_intensity_blue_per_column = []
+
+    #
+    # Calculate the average background intensity in the RGB image for each column in each color channel separately.
+    # Use only background pixels, as defined by the object mask created from the NIR image.
+    #
+    for col in range(width):
+        column_data_blue = image_vis[:, col, 0].copy()
+        column_data_blue *= mask_level2[:, col]
+        column_data_green = image_vis[:, col, 1].copy()
+        column_data_green *= mask_level2[:, col]
+        column_data_red = image_vis[:, col, 2].copy()  # Make a copy of the pixel values for the column
+        column_data_red *= mask_level2[:, col]  # Mask out any objects so background is created from background only
+
+        sum_intensity_background = np.sum(column_data_red)
+        num_pix_background = np.sum(mask_level2[:, col])
+        average_intensity = sum_intensity_background / num_pix_background
+        avg_intensity_red_per_column.append(average_intensity)
+
+        sum_intensity_background = np.sum(column_data_green)
+        average_intensity = sum_intensity_background / num_pix_background
+        avg_intensity_green_per_column.append(average_intensity)
+
+        sum_intensity_background = np.sum(column_data_blue)
+        average_intensity = sum_intensity_background / num_pix_background
+        avg_intensity_blue_per_column.append(average_intensity)
+
+    # Use an image padded with 0s all around so that flood fill in fill_holes(), that is applied later,
+    # does not flood the entire image if there is an object in its seed location (0,0).
+    foreground_image_dark_obj = np.zeros((height + 10, width + 10), dtype=np.uint8)
+    foreground_image_light_obj = np.zeros((height + 10, width + 10), dtype=np.uint8)
+
+    #
+    # Find the difference in each column and channel between the average background and pixel in the RGB image.
+    # For dark objects, using the maximum difference is needed to pick out these objets.
+    # For light objects, using the minimum difference is needed because they are so distinct.
+    #
+    for col in range(width):
+        blue_dif = avg_intensity_blue_per_column[col] - image_vis[:, col, 0]
+        green_dif = avg_intensity_green_per_column[col] - image_vis[:, col, 1]
+        red_dif = avg_intensity_red_per_column[col] - image_vis[:, col, 2]
+
+        blue_dif_neg = image_vis[:, col, 1] - avg_intensity_blue_per_column[col]
+        green_dif_neg = image_vis[:, col, 1] - avg_intensity_green_per_column[col]
+        red_dif_neg = image_vis[:, col, 2] - avg_intensity_red_per_column[col]
+
+        max_val = np.maximum.reduce([red_dif, green_dif, blue_dif])  # Find max diff.
+        min_val_neg = np.minimum.reduce([red_dif_neg, green_dif_neg, blue_dif_neg])  # Find min diff.
+
+        max_val[max_val < 0] = 0
+        min_val_neg[min_val_neg < 0] = 0
+
+        foreground_image_dark_obj[5:(height + 5), col + 5] = max_val
+        foreground_image_light_obj[5:(height + 5), col + 5] = min_val_neg
+
+    # Threshold the differences found in the previous step.  We use a low threshold to make sure we identify
+    # any pixels belonging to an object.  Any artifacts that are a consequence of the low threshold
+    #  are removed at later stage.
+    thresh_level = 5
+    _, binary_image_dark_obj = cv2.threshold(foreground_image_dark_obj, thresh_level, 255, cv2.THRESH_BINARY)
+    _, binary_image_light_obj = cv2.threshold(foreground_image_light_obj, thresh_level, 255, cv2.THRESH_BINARY)
+
+    # Create a mask that keeps objects and removes background, instead of one that keeps the background and removes
+    # objects, as we used previously.
+    obj_img = 255 * (1 - mask_level2)
+
+    # Take an intersection between the threshold image and object mask.  This is used to eliminate any
+    # artifacts left over from the threshold operation.
+    binary_image_dark_obj[5:(height + 5), 5:(width + 5)] = binary_image_dark_obj[5:(height + 5),
+                                                                5:(width + 5)] & obj_img
+    binary_image_light_obj[5:(height + 5), 5:(width + 5)] = binary_image_light_obj[5:(height + 5),
+                                                                5:(width + 5)] & obj_img
+
+    # Fill holes in objects.
+    binary_image_dark_obj = ipsSIA.fill_holes(binary_image_dark_obj)
+    binary_image_neg_light_obj = ipsSIA.fill_holes(binary_image_light_obj)
+
+    # Perform morphological open to eliminate small objects.
+    kernel = np.ones((3, 3), np.uint8)
+    new_dark_binary_image = cv2.morphologyEx(binary_image_dark_obj[5:(height + 5), 5:(width + 5)], cv2.MORPH_OPEN,
+                                             kernel)  # Remove tiny fragments
+    new_light_binary_image = cv2.morphologyEx(binary_image_neg_light_obj[5:(height + 5), 5:(width + 5)], cv2.MORPH_OPEN,
+                                              kernel)  # Remove tiny fragments
+
+    return new_dark_binary_image, new_light_binary_image

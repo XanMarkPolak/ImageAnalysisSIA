@@ -21,6 +21,7 @@ from skimage import measure
 
 from SupportUtil import write_error_to_file
 from ImageSegmentationSIA import segment_image_set_obj_by_nir
+# from ImageSegmentationSIA import segment_image_set_by_vis_img
 import SysConfigSIA
 
 
@@ -122,6 +123,7 @@ class ProcessImagesSIA:
             self.experiment_bitumen_binary_img[target_row:target_row + height, :], \
                 self.experiment_other_binary_img[target_row:target_row + height, :] = \
                 segment_image_set_obj_by_nir(image_vis, image_nir)
+            #                    segment_image_set_by_vis_img(image_vis, image_nir)
 
             end_time = time.time()
             elapsed_time = end_time - start_time
