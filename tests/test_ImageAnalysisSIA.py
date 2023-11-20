@@ -3,6 +3,8 @@ import pytest
 import numpy as np
 import csv
 
+import SysConfigSIA
+
 from ImageAnalysisSIA import ProcessImagesSIA
 from ImageAnalysisSIA import object_properties_to_csv
 
@@ -206,7 +208,7 @@ def test_object_properties_to_csv_creation(csv_object_file, csv_summary_file):
                              [0, 1, 0]])
 
     # Call the function
-    object_properties_to_csv(binary_image, binary_image, csv_object_file, 7.797271, 4000, True, csv_summary_file)
+    object_properties_to_csv(binary_image, binary_image, csv_object_file, 7.797271, 4000, 1.0, True, csv_summary_file)
 
     # Check if the CSV files were created
     assert csv_object_file.exists()
@@ -232,7 +234,9 @@ def test_object_properties_to_csv_one_object(csv_object_file):
                              [0, 255, 255, 255, 0]])
 
     # Call the function
-    object_properties_to_csv(binary_image, binary_image, csv_object_file, 7.797271, 4000, False)
+    object_properties_to_csv(binary_image, binary_image, csv_object_file, 7.797271, 4000, 1.0, False)
+
+    scale = SysConfigSIA.DOWNSCALE_FACTOR   # Get the scale factor that was used with input images.
 
     # Read the CSV file to verify its contents
     with open(csv_object_file, "r") as file:
@@ -244,14 +248,30 @@ def test_object_properties_to_csv_one_object(csv_object_file):
                            "MinorAxisLength(pix)", "Orientation(rad)", "Solidity", "Eccentricity", "Diameter(um)"]
 
         # This is the expected result from "measure.regionprops()" function in skimage library
-        expected_data_row1 = ['2.0', '6.0', '39.0', '7.835624753313121', 'BIT', '14.966629547095765',
-                             '3.265986323710904', '0.0', '1.0', '0.9759000729485332', '25.465780448267644']
-        expected_data_row2 = ['2.0', '6.0', '39.0', '7.835624753313121', 'UNK', '14.966629547095765',
-                              '3.265986323710904', '0.0', '1.0', '0.9759000729485332', '25.465780448267644']
-
         assert rows[0] == expected_header
-        assert rows[1] == expected_data_row1
-        assert rows[2] == expected_data_row2
+        assert float(rows[1][0]) == pytest.approx(2.0 / scale, rel=1e-5)
+        assert float(rows[1][1]) == pytest.approx(6.0 / scale, rel=1e-5)
+        assert float(rows[1][2]) == pytest.approx(39 / scale, rel=1e-5)
+        assert float(rows[1][3]) == pytest.approx(6.835624753313121, rel=1e-5)
+        assert rows[1][4] == "BIT"
+        assert float(rows[1][5]) == pytest.approx(14.966629547095765 / scale, rel=1e-5)
+        assert float(rows[1][6]) == pytest.approx(3.265986323710904 / scale, rel=1e-5)
+        assert float(rows[1][7]) == pytest.approx(0.0, rel=1e-5)
+        assert float(rows[1][8]) == pytest.approx(1.0, rel=1e-5)
+        assert float(rows[1][9]) == pytest.approx(0.9759000729485332, rel=1e-5)
+        assert float(rows[1][10]) == pytest.approx(25.465780448267644 / scale, rel=1e-5)
+
+        assert float(rows[1][0]) == pytest.approx(2.0 / scale, rel=1e-5)
+        assert float(rows[1][1]) == pytest.approx(6.0 / scale, rel=1e-5)
+        assert float(rows[1][2]) == pytest.approx(39 / scale, rel=1e-5)
+        assert float(rows[1][3]) == pytest.approx(6.835624753313121, rel=1e-5)
+        assert rows[1][4] == "BIT"
+        assert float(rows[1][5]) == pytest.approx(14.966629547095765 / scale, rel=1e-5)
+        assert float(rows[1][6]) == pytest.approx(3.265986323710904 / scale, rel=1e-5)
+        assert float(rows[1][7]) == pytest.approx(0.0, rel=1e-5)
+        assert float(rows[1][8]) == pytest.approx(1.0, rel=1e-5)
+        assert float(rows[1][9]) == pytest.approx(0.9759000729485332, rel=1e-5)
+        assert float(rows[1][10]) == pytest.approx(25.465780448267644 / scale, rel=1e-5)
 
 
 # Test object_properties_to_csv() for 3 objects to make sure the expected content is written into the CSV files.
@@ -261,22 +281,23 @@ def test_object_properties_to_csv_and_csv_summary(csv_object_file, csv_summary_f
                              [0, 255, 255, 255, 0],
                              [0, 255, 255, 255, 0],
                              [0, 0, 0, 0, 0],
+                             [0, 255, 255, 255, 255],
+                             [0, 255, 255, 255, 255],
+                             [0, 255, 255, 255, 255],
+                             [0, 255, 255, 255, 255],
+                             [0, 255, 255, 255, 255],
                              [0, 0, 0, 0, 0],
-                             [0, 255, 255, 255, 255],
-                             [0, 255, 255, 255, 255],
-                             [0, 255, 255, 255, 255],
-                             [0, 255, 255, 255, 255],
                              [0, 0, 0, 0, 0],
-                             [0, 0, 0, 0, 0],
-                             [255, 255, 255, 255, 255],
                              [255, 255, 255, 255, 255],
                              [255, 255, 255, 255, 255],
                              [255, 255, 255, 255, 255],
                              [255, 255, 255, 255, 255]])
 
+    scale = SysConfigSIA.DOWNSCALE_FACTOR   # Get the scale factor that was used with input images.
+
     # Call the function
     object_properties_to_csv(
-        binary_image, binary_image, csv_object_file, image_scale=1.0, line_scan_rate=1000,
+        binary_image, binary_image, csv_object_file, image_scale=1.0, line_scan_rate=1000, pump_speed=1.0,
         create_summary_stats=True, summary_csv_file=csv_summary_file
     )
 
@@ -290,26 +311,78 @@ def test_object_properties_to_csv_and_csv_summary(csv_object_file, csv_summary_f
                            "MinorAxisLength(pix)", "Orientation(rad)", "Solidity", "Eccentricity", "Diameter(um)"]
 
         # This is the expected result from "measure.regionprops()" function in skimage library
-        expected_data_row1 = ['2.0', '1.0', '9.0', '1.0886621079036347', 'BIT', '3.265986323710904',
-                              '3.265986323710904', '0.7853981633974483', '1.0', '0.0', '3.265986323710904']
-        expected_data_row2 = ['2.5', '6.5', '16.0', '1.118033988749895', 'BIT', '4.47213595499958',
-                              '4.47213595499958', '0.7853981633974483', '1.0', '0.0', '4.47213595499958']
-        expected_data_row3 = ['2.0', '13.0', '25.0', '1.1313708498984762', 'BIT', '5.656854249492381',
-                              '5.656854249492381', '0.7853981633974483', '1.0', '0.0', '5.6568542494923815']
-        expected_data_row4 = ['2.0', '1.0', '9.0', '1.0886621079036347', 'UNK', '3.265986323710904',
-                              '3.265986323710904', '0.7853981633974483', '1.0', '0.0', '3.265986323710904']
-        expected_data_row5 = ['2.5', '6.5', '16.0', '1.118033988749895', 'UNK', '4.47213595499958',
-                              '4.47213595499958', '0.7853981633974483', '1.0', '0.0', '4.47213595499958']
-        expected_data_row6 = ['2.0', '13.0', '25.0', '1.1313708498984762', 'UNK', '5.656854249492381',
-                              '5.656854249492381', '0.7853981633974483', '1.0', '0.0', '5.6568542494923815']
-
         assert rows[0] == expected_header
-        assert rows[1] == expected_data_row1
-        assert rows[2] == expected_data_row2
-        assert rows[3] == expected_data_row3
-        assert rows[4] == expected_data_row4
-        assert rows[5] == expected_data_row5
-        assert rows[6] == expected_data_row6
+        assert float(rows[1][0]) == pytest.approx(2.0 / scale, rel=1e-5)
+        assert float(rows[1][1]) == pytest.approx(1.0 / scale, rel=1e-5)
+        assert float(rows[1][2]) == pytest.approx(9.0 / scale, rel=1e-5)
+        assert float(rows[1][3]) == pytest.approx(0.08866210790363471, rel=1e-5)
+        assert rows[1][4] == "BIT"
+        assert float(rows[1][5]) == pytest.approx(3.2659863237 / scale, rel=1e-5)
+        assert float(rows[1][6]) == pytest.approx(3.2659863237 / scale, rel=1e-5)
+        assert float(rows[1][7]) == pytest.approx(0.7853981633974483, rel=1e-5)
+        assert float(rows[1][8]) == pytest.approx(1.0, rel=1e-5)
+        assert float(rows[1][9]) == pytest.approx(0.0, rel=1e-5)
+        assert float(rows[1][10]) == pytest.approx(3.265986323710904 / scale, rel=1e-5)
+
+        assert float(rows[2][0]) == pytest.approx(2.5 / scale, rel=1e-5)
+        assert float(rows[2][1]) == pytest.approx(6.0 / scale, rel=1e-5)
+        assert float(rows[2][2]) == pytest.approx(20 / scale, rel=1e-5)
+        assert float(rows[2][3]) == pytest.approx(-0.1055728090, rel=1e-5)
+        assert rows[2][4] == "BIT"
+        assert float(rows[2][5]) == pytest.approx(5.6568542494923805 / scale, rel=1e-5)
+        assert float(rows[2][6]) == pytest.approx(4.47213595499958 / scale, rel=1e-5)
+        assert float(rows[2][7]) == pytest.approx(0.0, rel=1e-5)
+        assert float(rows[2][8]) == pytest.approx(1.0, rel=1e-5)
+        assert float(rows[2][9]) == pytest.approx(0.6123724356957945, rel=1e-5)
+        assert float(rows[2][10]) == pytest.approx(4.47213595499958 / scale, rel=1e-5)
+
+        assert float(rows[3][0]) == pytest.approx(2.0 / scale, rel=1e-5)
+        assert float(rows[3][1]) == pytest.approx(12.5 / scale, rel=1e-5)
+        assert float(rows[3][2]) == pytest.approx(20 / scale, rel=1e-5)
+        assert float(rows[3][3]) == pytest.approx(0.41421356237309515, rel=1e-5)
+        assert rows[3][4] == "BIT"
+        assert float(rows[3][5]) == pytest.approx(5.656854249492381 / scale, rel=1e-5)
+        assert float(rows[3][6]) == pytest.approx(4.47213595499958 / scale, rel=1e-5)
+        assert float(rows[3][7]) == pytest.approx(1.5707963267948966, rel=1e-5)
+        assert float(rows[3][8]) == pytest.approx(1.0, rel=1e-5)
+        assert float(rows[3][9]) == pytest.approx(0.6123724356957945, rel=1e-5)
+        assert float(rows[3][10]) == pytest.approx(5.656854249492381 / scale, rel=1e-5)
+
+        assert float(rows[4][0]) == pytest.approx(2.0 / scale, rel=1e-5)
+        assert float(rows[4][1]) == pytest.approx(1.0 / scale, rel=1e-5)
+        assert float(rows[4][2]) == pytest.approx(9.0 / scale, rel=1e-5)
+        assert float(rows[4][3]) == pytest.approx(0.08866210790363471, rel=1e-5)
+        assert rows[4][4] == "AIR"
+        assert float(rows[4][5]) == pytest.approx(3.2659863237 / scale, rel=1e-5)
+        assert float(rows[4][6]) == pytest.approx(3.2659863237 / scale, rel=1e-5)
+        assert float(rows[4][7]) == pytest.approx(0.7853981633974483, rel=1e-5)
+        assert float(rows[4][8]) == pytest.approx(1.0, rel=1e-5)
+        assert float(rows[4][9]) == pytest.approx(0.0, rel=1e-5)
+        assert float(rows[4][10]) == pytest.approx(3.265986323710904 / scale, rel=1e-5)
+
+        assert float(rows[5][0]) == pytest.approx(2.5 / scale, rel=1e-5)
+        assert float(rows[5][1]) == pytest.approx(6.0 / scale, rel=1e-5)
+        assert float(rows[5][2]) == pytest.approx(20 / scale, rel=1e-5)
+        assert float(rows[5][3]) == pytest.approx(-0.1055728090, rel=1e-5)
+        assert rows[5][4] == "SND"
+        assert float(rows[5][5]) == pytest.approx(5.6568542494923805 / scale, rel=1e-5)
+        assert float(rows[5][6]) == pytest.approx(4.47213595499958 / scale, rel=1e-5)
+        assert float(rows[5][7]) == pytest.approx(0.0, rel=1e-5)
+        assert float(rows[5][8]) == pytest.approx(1.0, rel=1e-5)
+        assert float(rows[5][9]) == pytest.approx(0.6123724356957945, rel=1e-5)
+        assert float(rows[5][10]) == pytest.approx(4.47213595499958 / scale, rel=1e-5)
+
+        assert float(rows[6][0]) == pytest.approx(2.0 / scale, rel=1e-5)
+        assert float(rows[6][1]) == pytest.approx(12.5 / scale, rel=1e-5)
+        assert float(rows[6][2]) == pytest.approx(20 / scale, rel=1e-5)
+        assert float(rows[6][3]) == pytest.approx(0.41421356237309515, rel=1e-5)
+        assert rows[6][4] == "AIR"
+        assert float(rows[6][5]) == pytest.approx(5.656854249492381 / scale, rel=1e-5)
+        assert float(rows[6][6]) == pytest.approx(4.47213595499958 / scale, rel=1e-5)
+        assert float(rows[6][7]) == pytest.approx(1.5707963267948966, rel=1e-5)
+        assert float(rows[6][8]) == pytest.approx(1.0, rel=1e-5)
+        assert float(rows[6][9]) == pytest.approx(0.6123724356957945, rel=1e-5)
+        assert float(rows[6][10]) == pytest.approx(5.656854249492381 / scale, rel=1e-5)
 
     # Check if the summary CSV file was created
     assert csv_summary_file.exists()
@@ -319,31 +392,32 @@ def test_object_properties_to_csv_and_csv_summary(csv_object_file, csv_summary_f
         reader = csv.reader(file)
         rows = list(reader)
 
-        assert len(rows) == 12  # Check the number of rows in the summary CSV file is correct
+        assert len(rows) == 10  # Check the number of rows in the summary CSV file is correct
 
         # Check that number of objects, average diameter, and average speed of the 3 objects is correct
         # Check this for all types of objects: bitumen, air, sand, and unknown.
         assert rows[0] == ["NumOfBitObjects", "AvgDiameter", "AvgSpeed"]
         assert float(rows[1][0]) == 3
-        assert float(rows[1][1]) == pytest.approx(4.464992176067621, rel=1e-5)
-        assert float(rows[1][2]) == pytest.approx(1.112688982184002, rel=1e-5)
+        assert float(rows[1][1]) == pytest.approx(4.464992176067621 / scale, rel=1e-5)
+        assert float(rows[1][2]) == pytest.approx(0.13243428709221525, rel=1e-5)
         assert rows[2] == ["NumOfSandObjects", "AvgDiameter", "AvgSpeed"]
-        assert float(rows[3][0]) == 0
-        assert float(rows[3][1]) == pytest.approx(0, rel=1e-5)
-        assert float(rows[3][2]) == pytest.approx(0.0, rel=1e-5)
+        assert float(rows[3][0]) == 1
+        assert float(rows[3][1]) == pytest.approx(4.47213595499958 / scale, rel=1e-5)
+        assert float(rows[3][2]) == pytest.approx(-0.10557280900008414, rel=1e-5)
         assert rows[4] == ["NumOfAirObjects", "AvgDiameter", "AvgSpeed"]
-        assert float(rows[5][0]) == 0
-        assert float(rows[5][1]) == pytest.approx(0, rel=1e-5)
-        assert float(rows[5][2]) == pytest.approx(0.0, rel=1e-5)
-        assert rows[6] == ["NumOfUnKnObjects", "AvgDiameter", "AvgSpeed"]
-        assert float(rows[7][0]) == 0
-        assert float(rows[7][1]) == pytest.approx(0, rel=1e-5)
-        assert float(rows[7][2]) == pytest.approx(0.0, rel=1e-5)
+        assert float(rows[5][0]) == 2
+        assert float(rows[5][1]) == pytest.approx(4.4614202866016425 / scale, rel=1e-5)
+        assert float(rows[5][2]) == pytest.approx(0.25143783513836493, rel=1e-5)
 
-        assert rows[8] == ["Diameter(um)", "CPP_by_Diameter)"]
-        assert rows[9] == ['3.265986323710904', '24.38217280063487']
-        assert rows[10] == ['4.47213595499958', '57.76883791037645']
-        assert rows[11] == ['5.6568542494923815', '100.0']
+        assert rows[6] == ["Diameter(um)", "CPP_by_Diameter)"]
+        assert float(rows[7][0]) == pytest.approx(3.265986323710904 / scale, rel=1e-5)
+        assert float(rows[7][1]) == pytest.approx(24.38217280063487, rel=1e-5)
+
+        assert float(rows[8][0]) == pytest.approx(4.47213595499958 / scale, rel=1e-5)
+        assert float(rows[8][1]) == pytest.approx(57.76883791037645, rel=1e-5)
+
+        assert float(rows[9][0]) == pytest.approx(5.6568542494923815 / scale, rel=1e-5)
+        assert float(rows[9][1]) == pytest.approx(100.0, rel=1e-5)
 
 
 #

@@ -17,11 +17,13 @@ import numpy as np
 import cv2
 import json
 import time
+import SysConfigSIA
+
 from skimage import measure
 
 from SupportUtil import write_error_to_file
 from ImageSegmentationSIA import segment_image_set_obj_by_nir
-# from ImageSegmentationSIA import segment_image_set_by_vis_img
+from ImageSegmentationSIA import segment_image_set_by_vis_img
 import SysConfigSIA
 
 
@@ -43,6 +45,8 @@ class ProcessImagesSIA:
         self.last_valid_frame = SysConfigSIA.LAST_FRAME_NUM
         self.bad_left_edge = SysConfigSIA.BAD_EDGE_LEFT
         self.bad_right_edge = SysConfigSIA.BAD_EDGE_RIGHT
+        self.syringe_pump_speed = 0.0
+        self.segment_air_and_sand = 0.0
         self.nir_image_files = []
         self.vis_image_files = []
         self.config_json_loaded = False
@@ -57,6 +61,8 @@ class ProcessImagesSIA:
                 self.line_scan_rate = config["LINE_SCAN_RATE"]
                 self.save_segmented_images = config["SAVE_SEGMENTED_IMAGES"]
                 self.calc_summary_stats = config["CALC_SUMMARY_STATS"]
+                self.segment_air_and_sand = False
+                self.syringe_pump_speed = 13.0
                 self.config_json_loaded = True
         except FileNotFoundError:
             write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__,
@@ -87,13 +93,19 @@ class ProcessImagesSIA:
                                 f"Unknown Reason")
             return SysConfigSIA.ERROR_CODE_UNABLE_TO_OPEN_IMAGE
 
+        # Adjust result image size for Region of Interest.
+        # The exclusion zones on left and right of image will be cut out.
         width_roi = width - (self.bad_left_edge + self.bad_right_edge)
+
+        # Adjust result image sizes for possible downscaling.
+        width_roi = int(width_roi * SysConfigSIA.DOWNSCALE_FACTOR)
+        height = int(height * SysConfigSIA.DOWNSCALE_FACTOR)
+
         try:
             # Attempt to create large 8-bit images for segmented object for entire experiment.  One large
             # image for bitumen objects and the other for non-bitumen objects.
             self.experiment_bitumen_binary_img = np.zeros((height * num_of_image_sets, width_roi), dtype=np.uint8)
             self.experiment_other_binary_img = np.zeros((height * num_of_image_sets, width_roi), dtype=np.uint8)
-            print("Memory allocation for the large image was successful.")
         except MemoryError as err:
             write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__,
                                 SysConfigSIA.ERROR_CODE_UNABLE_TO_ALLOCATE_MEMORY_TO_IMAGE,
@@ -109,6 +121,7 @@ class ProcessImagesSIA:
             nir_file_path = self.image_folder + "\\" + self.nir_image_files[img_num]
             img_vis_full = cv2.imread(vis_file_path)
             img_nir_full = cv2.imread(nir_file_path, cv2.IMREAD_GRAYSCALE)
+
             if img_vis_full is None or img_nir_full is None:
                 write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__, SysConfigSIA.ERROR_CODE_UNABLE_TO_LOAD_IMAGE,
                                     f"Failed to load image set: "
@@ -119,10 +132,24 @@ class ProcessImagesSIA:
             image_vis = img_vis_full[:, SysConfigSIA.BAD_EDGE_LEFT:(width - SysConfigSIA.BAD_EDGE_RIGHT), :]
             image_nir = img_nir_full[:, SysConfigSIA.BAD_EDGE_LEFT:(width - SysConfigSIA.BAD_EDGE_RIGHT)]
 
-            target_row = height * img_num
+            if SysConfigSIA.DOWNSCALE_FACTOR != 1:
+                vis_height, vis_width, _ = image_vis.shape
+                nir_height, nir_width = image_nir.shape
+
+                # Resize the input images according to DOWNSCALE_FACTOR
+                image_vis = cv2.resize(image_vis, (int(vis_width * SysConfigSIA.DOWNSCALE_FACTOR),
+                                                   int(vis_height * SysConfigSIA.DOWNSCALE_FACTOR)))
+                image_nir = cv2.resize(image_nir, (int(nir_width * SysConfigSIA.DOWNSCALE_FACTOR),
+                                                   int(nir_height * SysConfigSIA.DOWNSCALE_FACTOR)))
+
+            target_row = height * img_num  # height has already been adjusted by DOWNSCALE_FACTOR
+
+            # Segment the image set identify objects of interest in each image.
+            # A binary image for bitumen (dark) objects and a binary image for air/sand (light) objects are
+            # returned.  The returned images have values of 255 for object pixels and 0 for background pixels.
             self.experiment_bitumen_binary_img[target_row:target_row + height, :], \
-                self.experiment_other_binary_img[target_row:target_row + height, :] = \
-                segment_image_set_obj_by_nir(image_vis, image_nir)
+            self.experiment_other_binary_img[target_row:target_row + height, :] = \
+                segment_image_set_by_vis_img(image_vis, image_nir)
             #                    segment_image_set_by_vis_img(image_vis, image_nir)
 
             end_time = time.time()
@@ -141,8 +168,8 @@ class ProcessImagesSIA:
             csv_file = "LSCAN-Res-" + fn_str + "-Objects.csv"
             summary_csv_file = "LSCAN-Res-" + fn_str + "-Summary.csv"
             object_properties_to_csv(self.experiment_bitumen_binary_img, self.experiment_other_binary_img,
-                                     csv_file, self.image_scale, self.line_scan_rate, self.calc_summary_stats,
-                                     summary_csv_file)
+                                     csv_file, self.image_scale, self.line_scan_rate, self.syringe_pump_speed,
+                                     self.calc_summary_stats, summary_csv_file)
 
 
 def get_file_list_and_verify_correct_files_exist(image_folder, start_frame_character, end_frame_character,
@@ -265,7 +292,8 @@ def get_file_list_and_verify_correct_files_exist(image_folder, start_frame_chara
     return vis_image_files, nir_image_files
 
 
-def get_object_properties_from_binary_image(binary_image, obj_type, image_scale, line_scan_rate):
+def get_object_properties_from_binary_image(binary_image, obj_type, image_scale, line_scan_rate, downscaled_factor,
+                                            pump_speed):
     """
     Calculate properties of objects in a binary image.
     This is a support function that is called from object_properties_to_csv().
@@ -290,8 +318,6 @@ def get_object_properties_from_binary_image(binary_image, obj_type, image_scale,
     # Calculate region properties using scikit-image's regionprops
     props = measure.regionprops(labeled_image)
 
-    speed_constant = line_scan_rate / 1000
-
     ski_props_list = []
 
     for obj_props in props:
@@ -305,31 +331,42 @@ def get_object_properties_from_binary_image(binary_image, obj_type, image_scale,
         min_row, min_col, max_row, max_col = obj_props.bbox
 
         # Calculate height
-        height = max_row - min_row
+        height = (max_row - min_row)
 
         diameter = image_scale * major * minor / np.sqrt(
             (minor * np.cos(fixed_orient)) ** 2 + (major * np.sin(fixed_orient)) ** 2)
 
-        speed = speed_constant * diameter / height
+        # Calculate the speed of the object in mm/s, and subtract out speed of the fluid controlled by the syringe pump.
+        speed = (line_scan_rate * diameter / (height * 1000)) - pump_speed
+
+        # If object type is passed in as unknown (UNK), then figure out if it is air bubble or sand, based on
+        # speed of the object.
+        if obj_type == "BIT":
+            obj_type_this_obj = "BIT"
+        else:
+            if speed > 0.0:
+                obj_type_this_obj = "AIR"  # If non-bitumen object is rising in fluid, then it must be air.
+            else:
+                obj_type_this_obj = "SND"  # If non-bitumen object is falling in fluid, then it must be sand.
 
         ski_props_list.append([
-            obj_props.centroid[1],
-            obj_props.centroid[0],
-            obj_props.area,
+            obj_props.centroid[1] / downscaled_factor,
+            obj_props.centroid[0] / downscaled_factor,
+            obj_props.area / downscaled_factor,
             speed,
-            obj_type,
-            major,
-            minor,
+            obj_type_this_obj,
+            major / downscaled_factor,
+            minor / downscaled_factor,
             obj_props.orientation,
             obj_props.solidity,
             obj_props.eccentricity,
-            diameter
+            diameter / downscaled_factor
         ])
     return ski_props_list
 
 
 def object_properties_to_csv(binary_bitumen_image, binary_non_bitumen_image, csv_file, image_scale, line_scan_rate,
-                             create_summary_stats, summary_csv_file=None):
+                             pump_speed, create_summary_stats, summary_csv_file=None):
     """
      Extract object properties from binary images and write the results to CSV files.
 
@@ -368,11 +405,13 @@ def object_properties_to_csv(binary_bitumen_image, binary_non_bitumen_image, csv
                             f"CSV file name not passed to object_properties_to_csv() .")
         return
 
+    downscale_factor = SysConfigSIA.DOWNSCALE_FACTOR
+
     # Get the object properties for the binary image of bitumen objects and light colored objects passed in.
     bitumen_props_list = get_object_properties_from_binary_image(binary_bitumen_image, "BIT", image_scale,
-                                                                 line_scan_rate)
-    other__obj_props_list = get_object_properties_from_binary_image(binary_non_bitumen_image, "UNK", image_scale,
-                                                                    line_scan_rate)
+                                                                 line_scan_rate, downscale_factor, pump_speed)
+    other_obj_props_list = get_object_properties_from_binary_image(binary_non_bitumen_image, "UNK", image_scale,
+                                                                   line_scan_rate, downscale_factor, pump_speed)
 
     # Initially write the results to temporary file "tmp.txt".  This temporary file is created instead of the
     # properly named target CSV file so that in case the program crashes or is killed, the control software
@@ -388,7 +427,7 @@ def object_properties_to_csv(binary_bitumen_image, binary_non_bitumen_image, csv
 
             # Write the data
             writer_obj.writerows(bitumen_props_list)
-            writer_obj.writerows(other__obj_props_list)
+            writer_obj.writerows(other_obj_props_list)
     except Exception as e:
         write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__, SysConfigSIA.ERROR_CODE_UNABLE_TO_WRITE_CSV_FILE,
                             f"Error.  Unable to write results to CSV file.  "
@@ -410,19 +449,41 @@ def object_properties_to_csv(binary_bitumen_image, binary_non_bitumen_image, csv
     #
     # Check if summary statistics are to be calculated and written to a CSV file.
     #
+    print("create_summary_stats= ", create_summary_stats, " summary_csv_file=",summary_csv_file)
     if create_summary_stats and summary_csv_file is not None:
         num_of_bit_obj = len(bitumen_props_list)
 
-        # Assuming ski_props_list has diameters as the last element, extract all the diameter measurement.
-        diameters = [obj[-1] for obj in bitumen_props_list]
-        avg_diameter = np.mean(diameters)
+        # Assuming bitumen_props_list has diameters as the last element, extract all the diameter measurement for
+        # bitumen (bit) objects.
+        diameters_bit = [obj[-1] for obj in bitumen_props_list]
+        avg_diameter_bit = np.mean(diameters_bit)
 
-        # Assuming ski_props_list has speed as the index=3 element, extract all the diameter measurement.
-        speeds = [obj[3] for obj in bitumen_props_list]
-        avg_speed = np.mean(speeds)
+        # For ObjClass "AIR", which other_obj_props_list has as the index=4, extract all the diameter measurements
+        # where the diameters are the last element.
+        diameters_air = [obj[-1] for obj in other_obj_props_list if obj[4] == "AIR"]
+        avg_diameter_air = np.mean(diameters_air)
+
+        # For ObjClass "SND", which other_obj_props_list has as the index=4, extract all the diameter measurements
+        # where the diameters are the last element.
+        diameters_snd = [obj[-1] for obj in other_obj_props_list if obj[4] == "SND"]
+        avg_diameter_snd = np.mean(diameters_snd)
+
+        # Assuming other_obj_props_list has speed as the index=3 element, extract all the speed measurements.
+        speeds_bit = [obj[3] for obj in bitumen_props_list]
+        avg_speed_bit = np.mean(speeds_bit)
+
+        # For ObjClass "AIR", which other_obj_props_list has as the index=4, extract all the speed measurements
+        # which are at index 3.
+        speed_air = [obj[3] for obj in other_obj_props_list if obj[4] == "AIR"]
+        avg_speed_air = np.mean(speed_air)
+
+        # For ObjClass "SND", which other_obj_props_list has as the index=4, extract all the speed measurements
+        # which are at index 3.
+        speed_snd = [obj[3] for obj in other_obj_props_list if obj[4] == "SND"]
+        avg_speed_snd = np.mean(speed_snd)
 
         # Convert diameters to a sorted NumPy array
-        sorted_diameters = np.sort(diameters)
+        sorted_diameters = np.sort(diameters_bit)
 
         # Calculate cumulative sum
         cpp_sum = np.cumsum(sorted_diameters)
@@ -435,20 +496,17 @@ def object_properties_to_csv(binary_bitumen_image, binary_non_bitumen_image, csv
                 writer_sum = csv.writer(file_sum)
 
                 writer_sum.writerow(["NumOfBitObjects", "AvgDiameter", "AvgSpeed"])
-                writer_sum.writerow([num_of_bit_obj, avg_diameter, avg_speed])
+                writer_sum.writerow([num_of_bit_obj, avg_diameter_bit, avg_speed_bit])
                 writer_sum.writerow(["NumOfSandObjects", "AvgDiameter", "AvgSpeed"])
-                writer_sum.writerow([0, 0.0, 0.0])
+                writer_sum.writerow([len(diameters_snd), avg_diameter_snd, avg_speed_snd])
                 writer_sum.writerow(["NumOfAirObjects", "AvgDiameter", "AvgSpeed"])
-                writer_sum.writerow([0, 0.0, 0.0])
-                writer_sum.writerow(["NumOfUnKnObjects", "AvgDiameter", "AvgSpeed"])
-                writer_sum.writerow([0, 0.0, 0.0])
+                writer_sum.writerow([len(diameters_air), avg_diameter_air, avg_speed_air])
 
                 writer_sum.writerow(["Diameter(um)", "CPP_by_Diameter)"])
 
                 # Write the data for Cumulative Percent Passing by Diameter
                 for row in range(num_of_bit_obj):
                     writer_sum.writerow([sorted_diameters[row], cpp_diameter[row]])
-
         except Exception as e:
             write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__, SysConfigSIA.ERROR_CODE_UNABLE_TO_WRITE_CSV_FILE,
                                 f"Error.  Unable to write summary results to CSV file.  "

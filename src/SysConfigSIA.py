@@ -38,6 +38,12 @@ LAST_FRAME_NUM = -1  # last frame number to process.  -1 means whatever the last
 BAD_EDGE_LEFT = 350
 BAD_EDGE_RIGHT = 350
 
+# Option to downscale the images to fraction of the original size in order to improve runtime performance.
+# When downscaling, results in CSV files are automatically adjusted to represent full size images.
+# DOWNSCALE_FACTOR of 1 means no downscaling.   DOWNSCALE_FACTOR of 0.5 means width and height are reduced by half.
+# Note: DOWNSCALE_FACTOR should either be 1 or 0.5, with possible 0.25 if absolutely needed for performance.
+#       It should never be greater than 1.
+DOWNSCALE_FACTOR = 0.5
 
 # Define error codes (these should never be changed)
 ERROR_CODE_BAD_FRAME_NUM = -200

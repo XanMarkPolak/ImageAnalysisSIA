@@ -282,25 +282,39 @@ def segment_image_set_by_vis_img(image_vis, image_nir):
     #
     # Find the difference in each column and channel between the average background and pixel in the RGB image.
     # For dark objects, using the maximum difference is needed to pick out these objets.
-    # For light objects, using the minimum difference is needed because they are so distinct.
+    # For light objects, using the minimum difference is better because they are so distinct.  The air and sand
+    # seem to be almost completely white and have fairly high intensity in all 3 channels.
     #
     for col in range(width):
+        # For dark objects, which have low pixel intensity values, take the average column background intensity and
+        # subtract the pixels in the RGB (visual) image.  Do this for each color channel.
         blue_dif = avg_intensity_blue_per_column[col] - image_vis[:, col, 0]
         green_dif = avg_intensity_green_per_column[col] - image_vis[:, col, 1]
         red_dif = avg_intensity_red_per_column[col] - image_vis[:, col, 2]
 
-        blue_dif_neg = image_vis[:, col, 1] - avg_intensity_blue_per_column[col]
-        green_dif_neg = image_vis[:, col, 1] - avg_intensity_green_per_column[col]
-        red_dif_neg = image_vis[:, col, 2] - avg_intensity_red_per_column[col]
+        # For light objects, for each color channel, take the pixels in the RGB (visual) image and subtract
+        # average column background intensity.
+        blue_dif_light = image_vis[:, col, 1] - avg_intensity_blue_per_column[col]
+        green_dif_light = image_vis[:, col, 1] - avg_intensity_green_per_column[col]
+        red_dif_light = image_vis[:, col, 2] - avg_intensity_red_per_column[col]
 
-        max_val = np.maximum.reduce([red_dif, green_dif, blue_dif])  # Find max diff.
-        min_val_neg = np.minimum.reduce([red_dif_neg, green_dif_neg, blue_dif_neg])  # Find min diff.
+        # For dark objects, take the maximum difference in all the channels.  In some images, the average pixel
+        # intensity of all 3 channels of bitumen droplets is not any darker than the background, so we look at
+        # any one channel that might differentiate the background from dark bitumen droplets.
+        max_diff = np.maximum.reduce([red_dif, green_dif, blue_dif])  # Find max diff.
 
-        max_val[max_val < 0] = 0
-        min_val_neg[min_val_neg < 0] = 0
+        # For light objects, take the minimum difference in all the channels.  The light objects seem to be white,
+        # with all channels having high pixel intensity.  For light objects, taking the minimum difference works better.
+        min_diff_light = np.minimum.reduce([red_dif_light, green_dif_light, blue_dif_light])  # Find min diff.
 
-        foreground_image_dark_obj[5:(height + 5), col + 5] = max_val
-        foreground_image_light_obj[5:(height + 5), col + 5] = min_val_neg
+        # Clip any negative values at 0.
+        max_diff[max_diff < 0] = 0
+        min_diff_light[min_diff_light < 0] = 0
+
+        # Coppy the pixel difference arrays into ones padded with 0s, so that flood fill does not flood the
+        # entire image if there is an object in its seed location.
+        foreground_image_dark_obj[5:(height + 5), col + 5] = max_diff
+        foreground_image_light_obj[5:(height + 5), col + 5] = min_diff_light
 
     # Threshold the differences found in the previous step.  We use a low threshold to make sure we identify
     # any pixels belonging to an object.  Any artifacts that are a consequence of the low threshold
@@ -324,11 +338,11 @@ def segment_image_set_by_vis_img(image_vis, image_nir):
     binary_image_dark_obj = ipsSIA.fill_holes(binary_image_dark_obj)
     binary_image_neg_light_obj = ipsSIA.fill_holes(binary_image_light_obj)
 
-    # Perform morphological open to eliminate small objects.
+    # Perform morphological "open" operation to eliminate small objects.
     kernel = np.ones((3, 3), np.uint8)
     new_dark_binary_image = cv2.morphologyEx(binary_image_dark_obj[5:(height + 5), 5:(width + 5)], cv2.MORPH_OPEN,
-                                             kernel)  # Remove tiny fragments
+                                             kernel)  # Remove tiny dark fragments
     new_light_binary_image = cv2.morphologyEx(binary_image_neg_light_obj[5:(height + 5), 5:(width + 5)], cv2.MORPH_OPEN,
-                                              kernel)  # Remove tiny fragments
+                                              kernel)  # Remove tiny light fragments
 
     return new_dark_binary_image, new_light_binary_image
