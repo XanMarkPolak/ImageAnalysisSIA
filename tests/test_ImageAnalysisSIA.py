@@ -408,16 +408,21 @@ def test_object_properties_to_csv_and_csv_summary(csv_object_file, csv_summary_f
         assert float(rows[5][0]) == 2
         assert float(rows[5][1]) == pytest.approx(4.4614202866016425 / scale, rel=1e-5)
         assert float(rows[5][2]) == pytest.approx(0.25143783513836493, rel=1e-5)
-
-        assert rows[6] == ["Diameter(um)", "CPP_by_Diameter)"]
+        assert rows[6] == ["Diameter(um)", "CPP_by_Number(%)", "CPP_by_Diameter(%)", "CPP_by_Volume(%)"]
         assert float(rows[7][0]) == pytest.approx(3.265986323710904 / scale, rel=1e-5)
-        assert float(rows[7][1]) == pytest.approx(24.38217280063487, rel=1e-5)
+        assert float(rows[7][1]) == pytest.approx(33.333333333333336, rel=1e-5)
+        assert float(rows[7][2]) == pytest.approx(24.38217280063487, rel=1e-5)
+        assert float(rows[7][3]) == pytest.approx(11.410833241334567, rel=1e-5)
 
         assert float(rows[8][0]) == pytest.approx(4.47213595499958 / scale, rel=1e-5)
-        assert float(rows[8][1]) == pytest.approx(57.76883791037645, rel=1e-5)
+        assert float(rows[8][1]) == pytest.approx(66.66666666666667, rel=1e-5)
+        assert float(rows[8][2]) == pytest.approx(57.76883791037645, rel=1e-5)
+        assert float(rows[8][3]) == pytest.approx(40.70757120793802, rel=1e-5)
 
         assert float(rows[9][0]) == pytest.approx(5.6568542494923815 / scale, rel=1e-5)
         assert float(rows[9][1]) == pytest.approx(100.0, rel=1e-5)
+        assert float(rows[9][2]) == pytest.approx(100.0, rel=1e-5)
+        assert float(rows[9][3]) == pytest.approx(100.0, rel=1e-5)
 
 
 #

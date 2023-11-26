@@ -148,9 +148,10 @@ class ProcessImagesSIA:
             # A binary image for bitumen (dark) objects and a binary image for air/sand (light) objects are
             # returned.  The returned images have values of 255 for object pixels and 0 for background pixels.
             self.experiment_bitumen_binary_img[target_row:target_row + height, :], \
-            self.experiment_other_binary_img[target_row:target_row + height, :] = \
-                segment_image_set_by_vis_img(image_vis, image_nir)
+                self.experiment_other_binary_img[target_row:target_row + height, :] = \
+                segment_image_set_obj_by_nir(image_vis, image_nir)
             #                    segment_image_set_by_vis_img(image_vis, image_nir)
+
 
             end_time = time.time()
             elapsed_time = end_time - start_time
@@ -486,10 +487,14 @@ def object_properties_to_csv(binary_bitumen_image, binary_non_bitumen_image, csv
         sorted_diameters = np.sort(diameters_bit)
 
         # Calculate cumulative sum
-        cpp_sum = np.cumsum(sorted_diameters)
+        cpp_sum_num = np.cumsum(np.ones(num_of_bit_obj))
+        cpp_sum_diam = np.cumsum(sorted_diameters)
+        cpp_sum_vol = np.cumsum(sorted_diameters**3)
 
-        # Calculate cumulative percentage
-        cpp_diameter = 100 * cpp_sum / np.sum(sorted_diameters)
+        # Calculate cumulative percent passing
+        cpp_number = 100 * cpp_sum_num / num_of_bit_obj
+        cpp_diameter = 100 * cpp_sum_diam / np.sum(sorted_diameters)
+        cpp_volume = 100 * cpp_sum_vol / np.sum(sorted_diameters**3)
 
         try:
             with open("tmp_sum.txt", 'w', newline='') as file_sum:
@@ -502,11 +507,11 @@ def object_properties_to_csv(binary_bitumen_image, binary_non_bitumen_image, csv
                 writer_sum.writerow(["NumOfAirObjects", "AvgDiameter", "AvgSpeed"])
                 writer_sum.writerow([len(diameters_air), avg_diameter_air, avg_speed_air])
 
-                writer_sum.writerow(["Diameter(um)", "CPP_by_Diameter)"])
+                writer_sum.writerow(["Diameter(um)", "CPP_by_Number(%)", "CPP_by_Diameter(%)", "CPP_by_Volume(%)"])
 
                 # Write the data for Cumulative Percent Passing by Diameter
                 for row in range(num_of_bit_obj):
-                    writer_sum.writerow([sorted_diameters[row], cpp_diameter[row]])
+                    writer_sum.writerow([sorted_diameters[row], cpp_number[row],  cpp_diameter[row], cpp_volume[row]])
         except Exception as e:
             write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__, SysConfigSIA.ERROR_CODE_UNABLE_TO_WRITE_CSV_FILE,
                                 f"Error.  Unable to write summary results to CSV file.  "

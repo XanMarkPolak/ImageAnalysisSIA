@@ -43,7 +43,7 @@ BAD_EDGE_RIGHT = 350
 # DOWNSCALE_FACTOR of 1 means no downscaling.   DOWNSCALE_FACTOR of 0.5 means width and height are reduced by half.
 # Note: DOWNSCALE_FACTOR should either be 1 or 0.5, with possible 0.25 if absolutely needed for performance.
 #       It should never be greater than 1.
-DOWNSCALE_FACTOR = 0.5
+DOWNSCALE_FACTOR = 1.0
 
 # Define error codes (these should never be changed)
 ERROR_CODE_BAD_FRAME_NUM = -200
