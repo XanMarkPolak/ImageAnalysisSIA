@@ -25,8 +25,8 @@ def find_objects_column_gaussian(image_in, k, mask=None):
     individual pixel intensity is from the mean. A threshold, k, is used to separate the background and object.
 
     Usage:
-    This function is used to create an initial object mask from a NIR (Near-Infrared) image. The resulting image contains
-    values of 0 for the object and 1 for the background. This image can be used as a new object mask.
+    This function is used to create an initial object mask from a NIR (Near-Infrared) image. The resulting image
+    contains values of 0 for the object and 1 for the background. This image can be used as a new object mask.
 
     Parameters:
 
@@ -80,7 +80,7 @@ def find_objects_column_gaussian(image_in, k, mask=None):
         # Check if image pixel minus column average, divided by column standard deviation (Z score) is greater
         #   than k.   If so, it means this pixel is an object and value 0 is assigned to this pixel, else a
         #   value of 1 is assigned.  This will create a new object mask.
-        new_image_mask[:, col] = np.where(np.abs((new_image_mask[:, col] - avg) / np.where(std > 0, std, 1)) > k, 0,
+        new_image_mask[:, col] = np.where(np.abs((new_image_mask[:, col] - avg) / np.where(std > 1, std, 1)) > k, 0,
                                           1).astype(np.uint8)
 
     return new_image_mask

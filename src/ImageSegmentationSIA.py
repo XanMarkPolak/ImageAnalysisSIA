@@ -76,13 +76,15 @@ def segment_image_set_obj_by_nir(image_vis, image_nir):
     # pixels are used in calculation.
     k = 2.0  # Typically k would be 2.5, but want to make sure we don't miss pixels of objects.
     mask_level1 = ipsSIA.find_objects_column_gaussian(image_nir, k, None)
-
+    cv2.imwrite("mask_level1.png", 255 * mask_level1)
     # Apply custom thresholding using Gaussian background model for a second pass.  The object mask generated
     # in the first pass is used to mask our object pixels, so mostly background pixels should be included.
     # Because only background pixels are included, the variance of pixel intensity will be low, and as a
     # result the Z score calculated for each pixel in each column will be higher and so a higher k value is needed.
     k = 4.0  # Need to increase k because variance is now reduced
     mask_level2 = ipsSIA.find_objects_column_gaussian(image_nir, k, mask_level1)
+
+    cv2.imwrite("mask_level2.png", 255*mask_level2)
 
     #
     # Use the object mask created from the NIR image to calculate the average intensity of background pixels for

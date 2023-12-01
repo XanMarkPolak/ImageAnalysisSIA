@@ -113,6 +113,7 @@ class ProcessImagesSIA:
                                 f"Reason: {err}")
             return SysConfigSIA.ERROR_CODE_UNABLE_TO_ALLOCATE_MEMORY_TO_IMAGE
 
+        # Iterate through all the loaded images
         for img_num in range(num_of_image_sets):
             print("Processing Img", img_num)
             start_time = time.time()
@@ -151,7 +152,6 @@ class ProcessImagesSIA:
                 self.experiment_other_binary_img[target_row:target_row + height, :] = \
                 segment_image_set_obj_by_nir(image_vis, image_nir)
             #                    segment_image_set_by_vis_img(image_vis, image_nir)
-
 
             end_time = time.time()
             elapsed_time = end_time - start_time
