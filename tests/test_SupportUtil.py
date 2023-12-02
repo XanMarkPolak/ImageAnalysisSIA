@@ -6,8 +6,7 @@ from SupportUtil import write_error_to_file  # Import the function to be tested
 
 
 # Define a temporary test file path for testing
-TEST_FILE_PATH = r"C:\Users\markn\OneDrive\Xanantec Work\SIA\ImageAnalysisSIA\tests\test_errors.log"
-
+TEST_FILE_PATH = r".\test_errors.log"
 
 # Fixture to set up and tear down the test environment
 @pytest.fixture(autouse=True)

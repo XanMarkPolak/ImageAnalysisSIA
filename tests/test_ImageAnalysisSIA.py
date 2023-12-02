@@ -8,7 +8,7 @@ import SysConfigSIA
 from ImageAnalysisSIA import ProcessImagesSIA
 from ImageAnalysisSIA import object_properties_to_csv
 
-TEST_TMP_FOLDER = 'C:\\Users\\markn\\OneDrive\\Xanantec Work\\SIA\\ImageAnalysisSIA\\tests\\tmp_tests'
+TEST_TMP_FOLDER = '.\\tmp_tests'
 
 
 @pytest.fixture()
