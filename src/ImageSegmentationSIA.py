@@ -18,7 +18,7 @@ MAX_HEIGHT_TO_WIDTH_RATIO = 25
 MIN_OBJECT_WIDTH = 15
 
 
-def segment_image_set_obj_by_nir(image_vis, image_nir):
+def segment_image_set_obj_by_nir(image_vis, image_nir, k1, k2):
     """
      Segment an image set by detecting objects using near-infrared (NIR) image and then using the RGB image to
      determine if each detected object is bitumen.
@@ -74,17 +74,18 @@ def segment_image_set_obj_by_nir(image_vis, image_nir):
     # Apply custom thresholding using Gaussian background model
     # This is the first pass, so variance in the Gaussian model will be high because both background and object
     # pixels are used in calculation.
-    k = 2.0  # Typically k would be 2.5, but want to make sure we don't miss pixels of objects.
-    mask_level1 = ipsSIA.find_objects_column_gaussian(image_nir, k, None)
-    cv2.imwrite("mask_level1.png", 255 * mask_level1)
+    # Typically, k would be 2.5, but want to make sure we don't miss pixels of objects, so for first pass, it is
+    # recommended that k be 2.0 or even 1.0 depending on the image.
+    mask_level1 = ipsSIA.find_objects_column_gaussian(image_nir, k1, None)
+#cv2.imwrite("mask_level1.png", 255 * mask_level1)
+
     # Apply custom thresholding using Gaussian background model for a second pass.  The object mask generated
     # in the first pass is used to mask our object pixels, so mostly background pixels should be included.
     # Because only background pixels are included, the variance of pixel intensity will be low, and as a
     # result the Z score calculated for each pixel in each column will be higher and so a higher k value is needed.
-    k = 4.0  # Need to increase k because variance is now reduced
-    mask_level2 = ipsSIA.find_objects_column_gaussian(image_nir, k, mask_level1)
+    mask_level2 = ipsSIA.find_objects_column_gaussian(image_nir, k2, mask_level1)
 
-    cv2.imwrite("mask_level2.png", 255*mask_level2)
+#cv2.imwrite("mask_level2.png", 255*mask_level2)
 
     #
     # Use the object mask created from the NIR image to calculate the average intensity of background pixels for
@@ -174,7 +175,7 @@ def segment_image_set_obj_by_nir(image_vis, image_nir):
     return new_dark_binary_image, new_light_binary_image
 
 
-def segment_image_set_by_vis_img(image_vis, image_nir):
+def segment_image_set_by_vis_img(image_vis, image_nir, k1, k2):
     """
      Segment an image set by detecting objects using visual RGB (VIS) image and then using the near infrared (NIR)
      image to correct the segmentation.
@@ -236,15 +237,16 @@ def segment_image_set_by_vis_img(image_vis, image_nir):
     # Apply custom thresholding using Gaussian background model
     # This is the first pass, so variance in the Gaussian model will be high because both background and object
     # pixels are used in calculation.
-    k = 2.0  # Typically k would be 2.5, but want to make sure we don't miss pixels of objects.
-    mask_level1 = ipsSIA.find_objects_column_gaussian(image_nir, k, None)
+    # Typically, k would be 2.5, but want to make sure we don't miss pixels of objects, so for first pass, it is
+    # recommended that k be 2.0 or even 1.0 depending on the image.
+
+    mask_level1 = ipsSIA.find_objects_column_gaussian(image_nir, k1, None)
 
     # Apply custom thresholding using Gaussian background model for a second pass.  The object mask generated
     # in the first pass is used to mask our object pixels, so mostly background pixels should be included.
     # Because only background pixels are included, the variance of pixel intensity will be low, and as a
     # result the Z score calculated for each pixel in each column will be higher and so a higher k value is needed.
-    k = 4.0  # Need to increase k because variance is now reduced
-    mask_level2 = ipsSIA.find_objects_column_gaussian(image_nir, k, mask_level1)
+    mask_level2 = ipsSIA.find_objects_column_gaussian(image_nir, k2, mask_level1)
 
     # Initialize lists to store column-wise statistics for each color channel
     avg_intensity_red_per_column = []

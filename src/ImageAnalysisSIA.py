@@ -43,12 +43,17 @@ class ProcessImagesSIA:
         self.end_frame_character = SysConfigSIA.LAST_IMAGE_NAME_FRAME_CHARACTER
         self.first_valid_frame = SysConfigSIA.FIRST_FRAME_NUM
         self.last_valid_frame = SysConfigSIA.LAST_FRAME_NUM
-        self.bad_left_edge = SysConfigSIA.BAD_EDGE_LEFT
-        self.bad_right_edge = SysConfigSIA.BAD_EDGE_RIGHT
         self.syringe_pump_speed = 0.0
         self.segment_air_and_sand = 0.0
         self.nir_image_files = []
         self.vis_image_files = []
+        self.down_sample = False
+        self.down_sample_factor = SysConfigSIA.DOWNSCALE_FACTOR
+        self.k1 = 2.0
+        self.k2 = 4.0
+        self.bad_left_edge = SysConfigSIA.BAD_EDGE_LEFT
+        self.bad_right_edge = SysConfigSIA.BAD_EDGE_RIGHT
+        self.min_obj_diam_um = 0.0
         self.config_json_loaded = False
 
     # Define methods
@@ -61,9 +66,20 @@ class ProcessImagesSIA:
                 self.line_scan_rate = config["LINE_SCAN_RATE"]
                 self.save_segmented_images = config["SAVE_SEGMENTED_IMAGES"]
                 self.calc_summary_stats = config["CALC_SUMMARY_STATS"]
-                self.segment_air_and_sand = False
-                self.syringe_pump_speed = 13.0
+                self.segment_air_and_sand = config["SEGMENT_AIR_AND_SAND"]
+                self.syringe_pump_speed = config["SYRINGE_PUMP_SPEED"]
+                self.bad_left_edge = config["BAD_EDGE_LEFT"]
+                self.bad_right_edge = config["BAD_EDGE_RIGHT"]
+                self.down_sample = config["DOWN_SAMPLE"]
+                if self.down_sample:
+                    self.down_sample_factor = SysConfigSIA.DOWNSCALE_FACTOR
+                else:
+                    self.down_sample_factor = 1.0
+                self.k1 = config["K1"]
+                self.k2 = config["K2"]
+                self.min_obj_diam_um = config["MIN_OBJ_DIAMETER_UM"]
                 self.config_json_loaded = True
+
         except FileNotFoundError:
             write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__,
                                 SysConfigSIA.ERROR_CODE_UNABLE_TO_READ_CONFIG_FILE,
@@ -133,25 +149,28 @@ class ProcessImagesSIA:
             image_vis = img_vis_full[:, SysConfigSIA.BAD_EDGE_LEFT:(width - SysConfigSIA.BAD_EDGE_RIGHT), :]
             image_nir = img_nir_full[:, SysConfigSIA.BAD_EDGE_LEFT:(width - SysConfigSIA.BAD_EDGE_RIGHT)]
 
-            if SysConfigSIA.DOWNSCALE_FACTOR != 1:
+            # If "down_sample" option was chosen, the images will be resized to the given downscale factor.
+            # For example, a downscale factor of 0.5 would reduce the width and height by 50%.
+            if self.down_sample:
                 vis_height, vis_width, _ = image_vis.shape
                 nir_height, nir_width = image_nir.shape
 
+                downscale_factor = self.down_sample_factor  # downscale_factor is used to resize image to a smaller one.
                 # Resize the input images according to DOWNSCALE_FACTOR
-                image_vis = cv2.resize(image_vis, (int(vis_width * SysConfigSIA.DOWNSCALE_FACTOR),
-                                                   int(vis_height * SysConfigSIA.DOWNSCALE_FACTOR)))
-                image_nir = cv2.resize(image_nir, (int(nir_width * SysConfigSIA.DOWNSCALE_FACTOR),
-                                                   int(nir_height * SysConfigSIA.DOWNSCALE_FACTOR)))
+                image_vis = cv2.resize(image_vis, (int(vis_width * downscale_factor),
+                                                   int(vis_height * downscale_factor)))
+                image_nir = cv2.resize(image_nir, (int(nir_width * downscale_factor),
+                                                   int(nir_height * downscale_factor)))
 
             target_row = height * img_num  # height has already been adjusted by DOWNSCALE_FACTOR
 
-            # Segment the image set identify objects of interest in each image.
+            # Segment the image set and identify objects of interest in each image.
             # A binary image for bitumen (dark) objects and a binary image for air/sand (light) objects are
             # returned.  The returned images have values of 255 for object pixels and 0 for background pixels.
             self.experiment_bitumen_binary_img[target_row:target_row + height, :], \
                 self.experiment_other_binary_img[target_row:target_row + height, :] = \
-                segment_image_set_obj_by_nir(image_vis, image_nir)
-            #                    segment_image_set_by_vis_img(image_vis, image_nir)
+                segment_image_set_obj_by_nir(image_vis, image_nir, self.k1, self.k2)
+            #                    segment_image_set_by_vis_img(image_vis, image_nir, self.k1, self.k2)
 
             end_time = time.time()
             elapsed_time = end_time - start_time
