@@ -23,7 +23,8 @@
 
 OPERATOR_CONFIG_FILE_JSON = "C:\\Users\\markn\\OneDrive\\Xanantec Work\\SIA\\ImageAnalysisSIA\\src\\OperatorConfigSIA.json"
 ERROR_LOG_FILE = "C:\\Users\\markn\\OneDrive\\Xanantec Work\\SIA\\ImageAnalysisSIA\\ErrorsSIA.log"
-
+CSV_OUTPUT_FOLDER = "C:\\Users\\markn\\OneDrive\\Xanantec Work\\SIA\\OutCSV"
+SEGMENTED_IMG_FOLDER = "C:\\Users\\markn\\OneDrive\\Xanantec Work\\SIA\\OutSegImg"
 
 # Defined SIA system constants.
 FIRST_IMAGE_NAME_FRAME_CHARACTER = 13  # first character in image filename that specifies frame number.
@@ -40,10 +41,13 @@ BAD_EDGE_RIGHT = 350
 
 # Option to downscale the images to fraction of the original size in order to improve runtime performance.
 # When downscaling, results in CSV files are automatically adjusted to represent full size images.
-# DOWNSCALE_FACTOR of 1 means no downscaling.   DOWNSCALE_FACTOR of 0.5 means width and height are reduced by half.
+# DOWNSCALE_FACTOR of 1 would mean no downscaling.   DOWNSCALE_FACTOR of 0.5 means width and height are reduced by half.
+# Whether DOWNSCALE_FACTOR is used or not is specified in the OperatorConfigSIA.json file with flag "DOWN_SAMPLE".
+# If "DOWN_SAMPLE" is true, then the DOWNSCALE_FACTOR specified in this configuration file will be used.
+# If "DOWN_SAMPLE" is false, then DOWNSCALE_FACTOR of 1.0 will be used, irrespective of what it is set here.
 # Note: DOWNSCALE_FACTOR should either be 1 or 0.5, with possible 0.25 if absolutely needed for performance.
 #       It should never be greater than 1.
-DOWNSCALE_FACTOR = 1.0
+DOWNSCALE_FACTOR = 0.5
 
 # Define error codes (these should never be changed)
 ERROR_CODE_BAD_FRAME_NUM = -200
@@ -55,4 +59,7 @@ ERROR_CODE_UNABLE_TO_ALLOCATE_MEMORY_TO_IMAGE = -205
 ERROR_CODE_UNABLE_TO_LOAD_IMAGE = -206
 ERROR_CODE_UNABLE_TO_WRITE_CSV_FILE = -207
 ERROR_CODE_UNABLE_TO_READ_CONFIG_FILE = -208
+ERROR_CODE_UNKNOWN_SEGMENT_ALGO = -209
+ERROR_CODE_UNABLE_TO_CREATE_FOLDER = -210
+
 WARNING_CODE_FEWER_THAN_EXPECTED_FRAMES = -101

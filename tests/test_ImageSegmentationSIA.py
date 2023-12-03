@@ -221,7 +221,7 @@ def test_segment_image_set_by_vis_img_correctly_segment_light_object():
 
 # Test if the function correctly finds multiple objects seen in NIR image and identifies them as bitumen or other.
 def test_segment_image_set_by_vis_img_correctly_segment__multiple__objects():
-    image_vis = np.ones((1000, 100, 3), dtype=np.uint8)  * 120  # Intensity of 120 is background
+    image_vis = np.ones((1000, 100, 3), dtype=np.uint8) * 120  # Intensity of 120 is background
     image_nir = np.ones((1000, 100), dtype=np.uint8) * 255
 
     # Create 20 objects with 20x20 dimensions: 10 dark and 10 light objects

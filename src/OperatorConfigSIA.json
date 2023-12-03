@@ -10,5 +10,6 @@
 	"DOWN_SAMPLE" : true,
 	"K1" : 2.0,
 	"K2" : 4.0,
-	"MIN_OBJ_DIAMETER_UM": 0.0
+	"MIN_OBJ_DIAMETER_UM" : 0.0,
+	"SEGMENTATION_ALGO" : "VIS"
 }

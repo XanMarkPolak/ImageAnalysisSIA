@@ -208,7 +208,8 @@ def test_object_properties_to_csv_creation(csv_object_file, csv_summary_file):
                              [0, 1, 0]])
 
     # Call the function
-    object_properties_to_csv(binary_image, binary_image, csv_object_file, 7.797271, 4000, 1.0, True, csv_summary_file)
+    object_properties_to_csv(binary_image, binary_image, csv_object_file, 7.797271, 4000, 1.0, 1.0, 0.0, True,
+                             csv_summary_file)
 
     # Check if the CSV files were created
     assert csv_object_file.exists()
@@ -233,10 +234,11 @@ def test_object_properties_to_csv_one_object(csv_object_file):
                              [0, 255, 255, 255, 0],
                              [0, 255, 255, 255, 0]])
 
-    # Call the function
-    object_properties_to_csv(binary_image, binary_image, csv_object_file, 7.797271, 4000, 1.0, False)
+    scale = 0.5
 
-    scale = SysConfigSIA.DOWNSCALE_FACTOR   # Get the scale factor that was used with input images.
+    # Call the function
+    object_properties_to_csv(binary_image, binary_image, csv_object_file, 7.797271, 4000, 1.0, scale, 0.0, False)
+
 
     # Read the CSV file to verify its contents
     with open(csv_object_file, "r") as file:
@@ -293,12 +295,12 @@ def test_object_properties_to_csv_and_csv_summary(csv_object_file, csv_summary_f
                              [255, 255, 255, 255, 255],
                              [255, 255, 255, 255, 255]])
 
-    scale = SysConfigSIA.DOWNSCALE_FACTOR   # Get the scale factor that was used with input images.
+    scale = 0.5
 
     # Call the function
     object_properties_to_csv(
         binary_image, binary_image, csv_object_file, image_scale=1.0, line_scan_rate=1000, pump_speed=1.0,
-        create_summary_stats=True, summary_csv_file=csv_summary_file
+        downscale_factor=scale, min_obj_diam_um=0.0, create_summary_stats=True, summary_csv_file=csv_summary_file
     )
 
     # Read the CSV file to verify its contents
