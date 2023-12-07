@@ -20,16 +20,17 @@ from ImageAnalysisSIA import ProcessImagesSIA
 def main():
     print("Starting main function!")
     # Check if a folder path is provided as a command-line argument
-    if len(sys.argv) != 2:
-        print("Usage: python your_program.py /path/to/your/folder")
+    if len(sys.argv) != 3:
+        print("Usage: python ImageAnalysisSIAMain.py /path/to/the/input_folder /path/to/the/output_folder")
         sys.exit(1)
 
-    folder_path = sys.argv[1]
+    in_folder_path = sys.argv[1]
+    out_folder_path = sys.argv[2]
 
-    print("\nFolder = ", folder_path)
+    print("\nFolder = ", in_folder_path)
     # path = r"C:\Users\markn\OneDrive\Xanantec Work\SIA\test_data\ConcatLSCAN-03208-2023-06-05-10-16-17"
 
-    process_images_sia = ProcessImagesSIA(folder_path)
+    process_images_sia = ProcessImagesSIA(in_folder_path, out_folder_path)
 
     process_images_sia.load_json_config_file()
 

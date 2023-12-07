@@ -23,8 +23,6 @@
 
 OPERATOR_CONFIG_FILE_JSON = "C:\\Users\\markn\\OneDrive\\Xanantec Work\\SIA\\ImageAnalysisSIA\\src\\OperatorConfigSIA.json"
 ERROR_LOG_FILE = "C:\\Users\\markn\\OneDrive\\Xanantec Work\\SIA\\ImageAnalysisSIA\\ErrorsSIA.log"
-CSV_OUTPUT_FOLDER = "C:\\Users\\markn\\OneDrive\\Xanantec Work\\SIA\\OutCSV"
-SEGMENTED_IMG_FOLDER = "C:\\Users\\markn\\OneDrive\\Xanantec Work\\SIA\\OutSegImg"
 
 # Defined SIA system constants.
 FIRST_IMAGE_NAME_FRAME_CHARACTER = 13  # first character in image filename that specifies frame number.
@@ -61,5 +59,6 @@ ERROR_CODE_UNABLE_TO_WRITE_CSV_FILE = -207
 ERROR_CODE_UNABLE_TO_READ_CONFIG_FILE = -208
 ERROR_CODE_UNKNOWN_SEGMENT_ALGO = -209
 ERROR_CODE_UNABLE_TO_CREATE_FOLDER = -210
+ERROR_CODE_OUTPUT_FOLDER_INVALID = -211
 
 WARNING_CODE_FEWER_THAN_EXPECTED_FRAMES = -101

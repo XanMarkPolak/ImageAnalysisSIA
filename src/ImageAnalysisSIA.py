@@ -36,7 +36,8 @@ class ProcessImagesSIA:
     save_segmented_images = False
     calc_summary_stats = False
 
-    def __init__(self, image_folder):
+    def __init__(self, image_folder, output_folder):
+        self.output_folder = output_folder
         self.image_folder = image_folder
         self.start_frame_character = SysConfigSIA.FIRST_IMAGE_NAME_FRAME_CHARACTER
         self.end_frame_character = SysConfigSIA.LAST_IMAGE_NAME_FRAME_CHARACTER
@@ -124,8 +125,14 @@ class ProcessImagesSIA:
         width_roi = width - (self.bad_left_edge + self.bad_right_edge)
 
         # Adjust result image sizes for possible downscaling.
-        width_roi = int(width_roi * SysConfigSIA.DOWNSCALE_FACTOR)
-        height = int(height * SysConfigSIA.DOWNSCALE_FACTOR)
+        if self.down_sample:
+            downscale_factor = self.down_sample_factor  # downscale_factor is used to resize image to a smaller one.
+        else:
+            downscale_factor = 1
+
+        # Adjust result image sizes for possible downscaling.
+        width_roi = int(width_roi * self.down_sample_factor)
+        height = int(height * self.down_sample_factor)
 
         try:
             # Attempt to create large 8-bit images for segmented object for entire experiment.  One large
@@ -165,7 +172,6 @@ class ProcessImagesSIA:
                 vis_height, vis_width, _ = image_vis.shape
                 nir_height, nir_width = image_nir.shape
 
-                downscale_factor = self.down_sample_factor  # downscale_factor is used to resize image to a smaller one.
                 # Resize the input images according to DOWNSCALE_FACTOR
                 image_vis = cv2.resize(image_vis, (int(vis_width * downscale_factor),
                                                    int(vis_height * downscale_factor)))
@@ -195,8 +201,8 @@ class ProcessImagesSIA:
             elapsed_time = end_time - start_time
             print("        Image", img_num, "elapsed time = ", elapsed_time)
 
-        write_segmented_images(SysConfigSIA.SEGMENTED_IMG_FOLDER, self.experiment_bitumen_binary_img,
-                               self.experiment_other_binary_img, height, downscale_factor)
+        write_segmented_images(self.output_folder, self.experiment_bitumen_binary_img,
+                               self.experiment_other_binary_img, height / downscale_factor, downscale_factor)
 
     #        cv2.imwrite("out_dark.png", self.experiment_bitumen_binary_img)
     #        cv2.imwrite("out_light.png", self.experiment_other_binary_img)
@@ -206,10 +212,25 @@ class ProcessImagesSIA:
         # to the CSV file.   If config file was not loaded, then exit without creating a CSV file.
         if self.config_json_loaded:
             # save results to csv file
+
+            folder = self.output_folder
+            try:
+                # Check if the folder exists
+                if not os.path.exists(folder):
+                    # Create the folder
+                    os.makedirs(folder)
+            except OSError as err:
+                write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__,
+                                    SysConfigSIA.ERROR_CODE_OUTPUT_FOLDER_INVALID,
+                                    f"Output folder does not exist and unable to create it. "
+                                    f"Reason: {err}")
+                return SysConfigSIA.ERROR_CODE_OUTPUT_FOLDER_INVALID
+
             fn_str = self.nir_image_files[0][
                      SysConfigSIA.FIRST_IMAGE_NAME_SAMPLE_CHARACTER:SysConfigSIA.LAST_IMAGE_NAME_SAMPLE_CHARACTER + 1]
-            csv_file = "LSCAN-Res-" + fn_str + "-Objects.csv"
-            summary_csv_file = "LSCAN-Res-" + fn_str + "-Summary.csv"
+
+            csv_file = folder + "\\" + "LSCAN-Res-" + fn_str + "-Objects.csv"
+            summary_csv_file = folder + "\\" + "LSCAN-Res-" + fn_str + "-Summary.csv"
             object_properties_to_csv(self.experiment_bitumen_binary_img, self.experiment_other_binary_img,
                                      csv_file, self.image_scale, self.line_scan_rate, self.syringe_pump_speed,
                                      self.down_sample_factor, self.min_obj_diam_um, self.calc_summary_stats,
@@ -605,12 +626,12 @@ def write_segmented_images(folder, bitumen_binary_img, light_binary_img, rows_pe
                                 f"Error.  Exception {e} occurred while creating folder '{folder}'")
             return SysConfigSIA.ERROR_CODE_UNABLE_TO_CREATE_FOLDER
 
-    src_row = 0     # Start from row 0 in the image
-    step = rows_per_img * downscale # Calculate the number of image rows to advance in each iteration
-    filenum = 1     # Start naming the saved images at file number 1.
+    src_row = 0  # Start from row 0 in the image
+    step = int(rows_per_img * downscale)  # Calculate the number of image rows to advance in each iteration
+    filenum = 1  # Start naming the saved images at file number 1.
 
     # Loop through the large image 'step' rows at a time, saving the smaller image cuts in each iteration.
-    while src_row <= height:
+    while src_row + step <= height:
         if downscale == 1.0:
             # The images were not downscaled, so no need to resize.  Simply copy the next 'rows_per_img' rows.
             single_image_dark = bitumen_binary_img[src_row:src_row + step, :]
@@ -621,7 +642,6 @@ def write_segmented_images(folder, bitumen_binary_img, light_binary_img, rows_pe
                                                                                            int(rows_per_img)))
             single_image_light = cv2.resize(light_binary_img[src_row:src_row + step, :], (int(width / downscale),
                                                                                           int(rows_per_img)))
-
         filepath_dark = "LS_SEG_BITUMEN_" + str(filenum).zfill(4) + ".png"
         filepath_light = "LS_SEG_SAND_AIR_" + str(filenum).zfill(4) + ".png"
         cv2.imwrite(filepath_dark, single_image_dark)
