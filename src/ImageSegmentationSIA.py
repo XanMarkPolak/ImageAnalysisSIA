@@ -13,12 +13,10 @@ import numpy as np
 import cv2
 
 import ImageProcSupport as ipsSIA
-
-MAX_HEIGHT_TO_WIDTH_RATIO = 25
-MIN_OBJECT_WIDTH = 15
+import SysConfigSIA
 
 
-def segment_image_set_obj_by_nir(image_vis, image_nir, k1, k2):
+def segment_image_set_obj_by_nir(image_vis, image_nir, segment_air_and_sand, down_sample_factor, k1, k2):
     """
      Segment an image set by detecting objects using near-infrared (NIR) image and then using the RGB image to
      determine if each detected object is bitumen.
@@ -26,6 +24,10 @@ def segment_image_set_obj_by_nir(image_vis, image_nir, k1, k2):
      Parameters:
      - image_vis (numpy.ndarray): RGB color image.
      - image_nir (numpy.ndarray): Corresponding NIR image.
+     - segment_air_and_sand (Bool): Choice for segmenting light objects (air and sand).
+     - down_sample_factor (float): Ratio by which the original image was downsampled
+     - k1 (float): The threshold value for the first pass through Gaussian background model
+     - k2 (float): The threshold value for the second pass through Gaussian background model
 
      Returns:
      - numpy.ndarray: Binary image with detected dark objects.
@@ -134,6 +136,8 @@ def segment_image_set_obj_by_nir(image_vis, image_nir, k1, k2):
     dark_objects = set()
     light_objects = set()
 
+    scale_adjusted_min_width = SysConfigSIA.MIN_OBJECT_WIDTH * down_sample_factor
+
     avg_bitumen_intensity = average_img_intensity + 10
 
     # Iterate through labeled objects
@@ -144,7 +148,9 @@ def segment_image_set_obj_by_nir(image_vis, image_nir, k1, k2):
         # than 15 pixels)
         # Also only keep object where the height of the object is less than width times MAX_HEIGHT_TO_WIDTH_RATIO.
         # Ignore extremely tall thin object (dirt on lens).
-        if obj_width > MIN_OBJECT_WIDTH and stats[label, cv2.CC_STAT_HEIGHT] < MAX_HEIGHT_TO_WIDTH_RATIO * obj_width:
+
+        if obj_width > scale_adjusted_min_width and \
+                stats[label, cv2.CC_STAT_HEIGHT] < SysConfigSIA.MAX_HEIGHT_TO_WIDTH_RATIO * obj_width:
             # Extract the region corresponding to the labeled object
             object_region = (labels == label)
 
@@ -165,17 +171,22 @@ def segment_image_set_obj_by_nir(image_vis, image_nir, k1, k2):
     # that is returned.
     #
     new_dark_binary_image = np.zeros_like(closed_img)
-    new_light_binary_image = np.zeros_like(closed_img)
+    if segment_air_and_sand:
+        new_light_binary_image = np.zeros_like(closed_img)
+    else:
+        new_light_binary_image = None
+
     for label in range(1, num_labels):
         if label in dark_objects:
             new_dark_binary_image[labels == label] = 255  # Set retained dark objects to 255 (white)
-        elif label in light_objects:
-            new_light_binary_image[labels == label] = 255  # Set retained light objects to 255 (white)
+        elif segment_air_and_sand:
+            if label in light_objects:
+                new_light_binary_image[labels == label] = 255  # Set retained light objects to 255 (white)
 
     return new_dark_binary_image, new_light_binary_image
 
 
-def segment_image_set_by_vis_img(image_vis, image_nir, k1, k2):
+def segment_image_set_by_vis_img(image_vis, image_nir, segment_air_and_sand, k1, k2):
     """
      Segment an image set by detecting objects using visual RGB (VIS) image and then using the near infrared (NIR)
      image to correct the segmentation.
@@ -183,6 +194,9 @@ def segment_image_set_by_vis_img(image_vis, image_nir, k1, k2):
      Parameters:
     - image_vis (numpy.ndarray): RGB color image.
     - image_nir (numpy.ndarray): Corresponding 8-bit NIR image.
+    - segment_air_and_sand (Bool): Choice for segmenting light objects (air and sand).
+    - k1 (float): The threshold value for the first pass through Gaussian background model
+    - k2 (float): The threshold value for the second pass through Gaussian background model
 
      Returns:
      - numpy.ndarray: Binary image with detected dark objects.
@@ -281,7 +295,8 @@ def segment_image_set_by_vis_img(image_vis, image_nir, k1, k2):
     # Use an image padded with 0s all around so that flood fill in fill_holes(), that is applied later,
     # does not flood the entire image if there is an object in its seed location (0,0).
     foreground_image_dark_obj = np.zeros((height + 10, width + 10), dtype=np.uint8)
-    foreground_image_light_obj = np.zeros((height + 10, width + 10), dtype=np.uint8)
+    if segment_air_and_sand:
+        foreground_image_light_obj = np.zeros((height + 10, width + 10), dtype=np.uint8)
 
     #
     # Find the difference in each column and channel between the average background and pixel in the RGB image.
@@ -307,25 +322,27 @@ def segment_image_set_by_vis_img(image_vis, image_nir, k1, k2):
         # any one channel that might differentiate the background from dark bitumen droplets.
         max_diff = np.maximum.reduce([red_dif, green_dif, blue_dif])  # Find max diff.
 
-        # For light objects, take the minimum difference in all the channels.  The light objects seem to be white,
-        # with all channels having high pixel intensity.  For light objects, taking the minimum difference works better.
-        min_diff_light = np.minimum.reduce([red_dif_light, green_dif_light, blue_dif_light])  # Find min diff.
-
         # Clip any negative values at 0.
         max_diff[max_diff < 0] = 0
-        min_diff_light[min_diff_light < 0] = 0
 
         # Coppy the pixel difference arrays into ones padded with 0s, so that flood fill does not flood the
         # entire image if there is an object in its seed location.
         foreground_image_dark_obj[5:(height + 5), col + 5] = max_diff
-        foreground_image_light_obj[5:(height + 5), col + 5] = min_diff_light
+
+        # For light objects, take the minimum difference in all the channels.  The light objects seem to be white,
+        # with all channels having high pixel intensity.  For light objects, taking the minimum difference works better.
+        if segment_air_and_sand:
+            min_diff_light = np.minimum.reduce([red_dif_light, green_dif_light, blue_dif_light])  # Find min diff.
+            min_diff_light[min_diff_light < 0] = 0  # Clip any negative values at 0.
+            # Coppy the pixel difference arrays into ones padded with 0s, so that flood fill does not flood the
+            # entire image if there is an object in its seed location.
+            foreground_image_light_obj[5:(height + 5), col + 5] = min_diff_light
 
     # Threshold the differences found in the previous step.  We use a low threshold to make sure we identify
     # any pixels belonging to an object.  Any artifacts that are a consequence of the low threshold
-    #  are removed at later stage.
-    thresh_level = 5
+    # are removed at later stage.
+    thresh_level = SysConfigSIA.VIS_THRESHOLD_LEVEL
     _, binary_image_dark_obj = cv2.threshold(foreground_image_dark_obj, thresh_level, 255, cv2.THRESH_BINARY)
-    _, binary_image_light_obj = cv2.threshold(foreground_image_light_obj, thresh_level, 255, cv2.THRESH_BINARY)
 
     # Create a mask that keeps objects and removes background, instead of one that keeps the background and removes
     # objects, as we used previously.
@@ -335,18 +352,23 @@ def segment_image_set_by_vis_img(image_vis, image_nir, k1, k2):
     # artifacts left over from the threshold operation.
     binary_image_dark_obj[5:(height + 5), 5:(width + 5)] = binary_image_dark_obj[5:(height + 5),
                                                                 5:(width + 5)] & obj_img
-    binary_image_light_obj[5:(height + 5), 5:(width + 5)] = binary_image_light_obj[5:(height + 5),
-                                                                5:(width + 5)] & obj_img
-
     # Fill holes in objects.
     binary_image_dark_obj = ipsSIA.fill_holes(binary_image_dark_obj)
-    binary_image_neg_light_obj = ipsSIA.fill_holes(binary_image_light_obj)
 
     # Perform morphological "open" operation to eliminate small objects.
     kernel = np.ones((3, 3), np.uint8)
     new_dark_binary_image = cv2.morphologyEx(binary_image_dark_obj[5:(height + 5), 5:(width + 5)], cv2.MORPH_OPEN,
                                              kernel)  # Remove tiny dark fragments
-    new_light_binary_image = cv2.morphologyEx(binary_image_neg_light_obj[5:(height + 5), 5:(width + 5)], cv2.MORPH_OPEN,
-                                              kernel)  # Remove tiny light fragments
+
+    if segment_air_and_sand:
+        _, binary_image_light_obj = cv2.threshold(foreground_image_light_obj, thresh_level, 255, cv2.THRESH_BINARY)
+
+        binary_image_light_obj[5:(height + 5), 5:(width + 5)] = binary_image_light_obj[5:(height + 5),
+                                                                5:(width + 5)] & obj_img
+        binary_image_neg_light_obj = ipsSIA.fill_holes(binary_image_light_obj)
+        new_light_binary_image = cv2.morphologyEx(binary_image_neg_light_obj[5:(height + 5), 5:(width + 5)],
+                                                  cv2.MORPH_OPEN, kernel)  # Remove tiny light fragments
+    else:
+        new_light_binary_image = None
 
     return new_dark_binary_image, new_light_binary_image

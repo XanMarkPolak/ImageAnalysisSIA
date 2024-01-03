@@ -20,37 +20,44 @@ from ImageAnalysisSIA import ProcessImagesSIA
 def main():
     print("Starting main function!")
     # Check if a folder path is provided as a command-line argument
-    if len(sys.argv) != 3:
-        print("Usage: python ImageAnalysisSIAMain.py /path/to/the/input_folder /path/to/the/output_folder")
-        sys.exit(1)
+    if len(sys.argv) != 2:
+        print("Usage: python ImageAnalysisSIAMain.py /path/to/the/input_folder ")
+        return 1
 
     in_folder_path = sys.argv[1]
-    out_folder_path = sys.argv[2]
 
-    print("\nFolder = ", in_folder_path)
-    # path = r"C:\Users\markn\OneDrive\Xanantec Work\SIA\test_data\ConcatLSCAN-03208-2023-06-05-10-16-17"
+    process_images_sia = ProcessImagesSIA(in_folder_path)
 
-    process_images_sia = ProcessImagesSIA(in_folder_path, out_folder_path)
+    status = process_images_sia.load_json_config_file()
+    if status != 0:
+        return status
 
-    process_images_sia.load_json_config_file()
+    status = process_images_sia.get_file_list()
+    if status != 0:
+        return status
 
     start_time = time.time()
-    process_images_sia.get_file_list()
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    print("\nget_file_list elapsed time = ", elapsed_time)
-    start_time = time.time()
-    process_images_sia.segment_images()
+    status = process_images_sia.segment_images()
+    if status != 0:
+        return status
+
     end_time = time.time()
     elapsed_time = end_time - start_time
     print("\nsegment_images elapsed time = ", elapsed_time)
+
+    if process_images_sia.save_segmented_images:
+        process_images_sia.write_out_segmented_images()
+
     start_time = time.time()
     process_images_sia.write_csv_files()
     end_time = time.time()
     elapsed_time = end_time - start_time
     print("\nwrite_csv_file elapsed time = ", elapsed_time)
 
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    # Run the main function and exit with the status code which the control software can retrieve.
+    sys.exit(main())
 

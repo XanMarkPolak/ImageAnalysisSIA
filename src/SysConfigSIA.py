@@ -8,7 +8,7 @@
 # Written by: Mark Polak
 #
 # Date Created: 2023-11-11
-# Last Modified: 2023-11-12
+# Last Modified: 2023-12-29
 #
 
 
@@ -23,6 +23,7 @@
 
 OPERATOR_CONFIG_FILE_JSON = "C:\\Users\\markn\\OneDrive\\Xanantec Work\\SIA\\ImageAnalysisSIA\\src\\OperatorConfigSIA.json"
 ERROR_LOG_FILE = "C:\\Users\\markn\\OneDrive\\Xanantec Work\\SIA\\ImageAnalysisSIA\\ErrorsSIA.log"
+OUTPUT_FOLDER = "C:\\Users\\markn\\OneDrive\\Xanantec Work\\SIA\\ImageAnalysisSIA\\Output"
 
 # Defined SIA system constants.
 FIRST_IMAGE_NAME_FRAME_CHARACTER = 13  # first character in image filename that specifies frame number.
@@ -37,6 +38,11 @@ LAST_FRAME_NUM = -1  # last frame number to process.  -1 means whatever the last
 BAD_EDGE_LEFT = 350
 BAD_EDGE_RIGHT = 350
 
+# String constants
+CSV_FILE_PREFIX = "LSCAN-Res-"  # File name prefix for CSV files (object file and summary file).
+LS_NIR_PREFIX = "LS-NIR-"   # File name prefix for LineScan NIR image files
+LS_VIS_PREFIX = "LS-VIS-"   # File name prefix for LineScan visual image files
+
 # Option to downscale the images to fraction of the original size in order to improve runtime performance.
 # When downscaling, results in CSV files are automatically adjusted to represent full size images.
 # DOWNSCALE_FACTOR of 1 would mean no downscaling.   DOWNSCALE_FACTOR of 0.5 means width and height are reduced by half.
@@ -46,6 +52,24 @@ BAD_EDGE_RIGHT = 350
 # Note: DOWNSCALE_FACTOR should either be 1 or 0.5, with possible 0.25 if absolutely needed for performance.
 #       It should never be greater than 1.
 DOWNSCALE_FACTOR = 0.5
+
+# VIS_THRESHOLD_LEVEL is a threshold used when segmenting from visual image in function
+# "segment_image_set_by_vis_img()".
+# This is a threshold that is applied after the background was subtracted out. When the background is effectively
+# removed, only a small threshold is needed.
+# We use a low threshold to make sure we identify any pixels belonging to an object.  Any artifacts that are a
+# consequence of the low threshold are removed at later stage.
+VIS_THRESHOLD_LEVEL = 5
+
+
+# In function segment_image_set_obj_by_nir(), constant MAX_HEIGHT_TO_WIDTH_RATIO is used to filter
+# out objects of extreme proportions that are likely artifacts.  MIN_OBJECT_WIDTH = 15 is used to improve
+# performance so that fewer objects need to be analyzed.
+MAX_HEIGHT_TO_WIDTH_RATIO = 25
+MIN_OBJECT_WIDTH = 15
+
+# Number of rows in each segmented image, if resulting segmented images are to be written out.
+ROWS_PER_SEG_OUTPUT_IMG = 4000
 
 # Define error codes (these should never be changed)
 ERROR_CODE_BAD_FRAME_NUM = -200
@@ -60,5 +84,6 @@ ERROR_CODE_UNABLE_TO_READ_CONFIG_FILE = -208
 ERROR_CODE_UNKNOWN_SEGMENT_ALGO = -209
 ERROR_CODE_UNABLE_TO_CREATE_FOLDER = -210
 ERROR_CODE_OUTPUT_FOLDER_INVALID = -211
+ERROR_CODE_NOT_ENOUGH_SEG_IMG_ROWS = -212   # Not enough rows in segmented image to write out.
 
 WARNING_CODE_FEWER_THAN_EXPECTED_FRAMES = -101

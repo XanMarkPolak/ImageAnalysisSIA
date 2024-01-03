@@ -7,6 +7,7 @@ import SysConfigSIA
 
 from ImageAnalysisSIA import ProcessImagesSIA
 from ImageAnalysisSIA import object_properties_to_csv
+from ImageAnalysisSIA import write_segmented_images
 
 TEST_TMP_FOLDER = '.\\tmp_tests'
 
@@ -14,7 +15,6 @@ TEST_TMP_FOLDER = '.\\tmp_tests'
 @pytest.fixture()
 def process_images_sia():
     cleanup_test_files(TEST_TMP_FOLDER)
-
     process_images_sia = ProcessImagesSIA(TEST_TMP_FOLDER)
 
     # create shorter test filenames and define start and end of frame number character
@@ -34,6 +34,30 @@ def csv_object_file(tmp_path):
     if file_path.exists():
         file_path.unlink()
 
+
+
+@pytest.fixture
+def temporary_folder(tmpdir):
+    return str(tmpdir.mkdir('test_folder'))
+
+
+@pytest.fixture
+def synthetic_binary_image():
+    return np.array([[0, 255, 255, 255, 0],
+                     [0, 255, 255, 255, 0],
+                     [0, 255, 255, 255, 0],
+                     [0, 0, 0, 0, 0],
+                     [0, 255, 255, 255, 255],
+                     [0, 255, 255, 255, 255],
+                     [0, 255, 255, 255, 255],
+                     [0, 255, 255, 255, 255],
+                     [0, 255, 255, 255, 255],
+                     [0, 0, 0, 0, 0],
+                     [0, 0, 0, 0, 0],
+                     [255, 255, 255, 255, 255],
+                     [255, 255, 255, 255, 255],
+                     [255, 255, 255, 255, 255],
+                     [255, 255, 255, 255, 255]])
 
 @pytest.fixture
 def csv_summary_file(tmp_path):
@@ -239,7 +263,6 @@ def test_object_properties_to_csv_one_object(csv_object_file):
     # Call the function
     object_properties_to_csv(binary_image, binary_image, csv_object_file, 7.797271, 4000, 1.0, scale, 0.0, False)
 
-
     # Read the CSV file to verify its contents
     with open(csv_object_file, "r") as file:
         reader = csv.reader(file)
@@ -277,30 +300,17 @@ def test_object_properties_to_csv_one_object(csv_object_file):
 
 
 # Test object_properties_to_csv() for 3 objects to make sure the expected content is written into the CSV files.
-def test_object_properties_to_csv_and_csv_summary(csv_object_file, csv_summary_file):
-    # Create a test binary image
-    binary_image = np.array([[0, 255, 255, 255, 0],
-                             [0, 255, 255, 255, 0],
-                             [0, 255, 255, 255, 0],
-                             [0, 0, 0, 0, 0],
-                             [0, 255, 255, 255, 255],
-                             [0, 255, 255, 255, 255],
-                             [0, 255, 255, 255, 255],
-                             [0, 255, 255, 255, 255],
-                             [0, 255, 255, 255, 255],
-                             [0, 0, 0, 0, 0],
-                             [0, 0, 0, 0, 0],
-                             [255, 255, 255, 255, 255],
-                             [255, 255, 255, 255, 255],
-                             [255, 255, 255, 255, 255],
-                             [255, 255, 255, 255, 255]])
+def test_object_properties_to_csv_and_csv_summary(csv_object_file, csv_summary_file, synthetic_binary_image):
+    # Use the provided synthetic binary image
+    binary_img = synthetic_binary_image
 
     scale = 0.5
 
     # Call the function
     object_properties_to_csv(
-        binary_image, binary_image, csv_object_file, image_scale=1.0, line_scan_rate=1000, pump_speed=1.0,
-        downscale_factor=scale, min_obj_diam_um=0.0, create_summary_stats=True, summary_csv_file=csv_summary_file
+        binary_img, binary_img, csv_object_file, image_scale=1.0, line_scan_rate=1000, pump_speed=1.0,
+        downscale_factor=scale, min_obj_diam_um=0.0, create_summary_stats=True,
+        summary_csv_file=csv_summary_file
     )
 
     # Read the CSV file to verify its contents
@@ -427,13 +437,74 @@ def test_object_properties_to_csv_and_csv_summary(csv_object_file, csv_summary_f
         assert float(rows[9][3]) == pytest.approx(100.0, rel=1e-5)
 
 
+# Test object_properties_to_csv() for zero objects in each binary image to make sure this situation is handled
+# properly without any errors in the csv object file and csv summary file.
+def test_object_properties_to_csv_and_csv_summary_zero_objects(csv_object_file, csv_summary_file):
+    # Create a test binary image with no objects
+    binary_image = np.array([[0, 0, 0, 0, 0],
+                             [0, 0, 0, 0, 0],
+                             [0, 0, 0, 0, 0],
+                             [0, 0, 0, 0, 0],
+                             [0, 0, 0, 0, 0],
+                             [0, 0, 0, 0, 0],
+                             [0, 0, 0, 0, 0]])
+
+    scale = 1.0
+
+    # Call the function
+    object_properties_to_csv(
+        binary_image, binary_image, csv_object_file, image_scale=1.0, line_scan_rate=1000, pump_speed=1.0,
+        downscale_factor=scale, min_obj_diam_um=0.0, create_summary_stats=True, summary_csv_file=csv_summary_file
+    )
+
+    # Read the CSV file to verify its contents
+    with open(csv_object_file, "r") as file:
+        reader = csv.reader(file)
+
+        rows = list(reader)
+
+        # Check if the header matches the expected header
+        expected_header = ["CentroidX", "CentroidY", "Area(pix)", "Speed(mm/s)", "ObjClass", "MajorAxisLength(pix)",
+                           "MinorAxisLength(pix)", "Orientation(rad)", "Solidity", "Eccentricity", "Diameter(um)"]
+
+        # This is the expected result from "measure.regionprops()" function in skimage library
+        assert rows[0] == expected_header
+        assert len(rows) == 1
+
+    # Check if the summary CSV file was created
+    assert csv_summary_file.exists()
+
+    # Read the contents of the summary CSV file and perform assertions
+    with open(csv_summary_file, 'r', newline='') as file:
+        reader = csv.reader(file)
+        rows = list(reader)
+
+        assert len(rows) == 7  # Check the number of rows in the summary CSV file is correct
+
+        # Check that number of objects, average diameter, and average speed of the 3 objects is correct
+        # Check this for all types of objects: bitumen, air, sand, and unknown.
+        assert rows[0] == ["NumOfBitObjects", "AvgDiameter", "AvgSpeed"]
+        assert float(rows[1][0]) == 0
+        assert np.isnan(float(rows[1][1]))
+        assert np.isnan(float(rows[1][2]))
+        assert rows[2] == ["NumOfSandObjects", "AvgDiameter", "AvgSpeed"]
+        assert float(rows[3][0]) == 0
+        assert np.isnan(float(rows[3][1]))
+        assert np.isnan(float(rows[3][2]))
+        assert rows[4] == ["NumOfAirObjects", "AvgDiameter", "AvgSpeed"]
+        assert float(rows[5][0]) == 0
+        assert np.isnan(float(rows[5][1]))
+        assert np.isnan(float(rows[5][2]))
+        assert rows[6] == ["Diameter(um)", "CPP_by_Number(%)", "CPP_by_Diameter(%)", "CPP_by_Volume(%)"]
+
+
 #
 # Unit test for load_json_config_file() method.
 #
 
 # Test when the config file is successfully loaded
 def test_load_json_config_file(monkeypatch):
-    process_images_instance = ProcessImagesSIA("")
+    process_images_instance = ProcessImagesSIA(None)
 
     process_images_instance.load_json_config_file()
 
@@ -443,3 +514,67 @@ def test_load_json_config_file(monkeypatch):
     # Verify that the image_scale and line_scan_rate have values other than 0, which is what they are initialized to.
     assert process_images_instance.image_scale > 0
     assert process_images_instance.line_scan_rate > 0
+
+
+#
+# Unit tests for write_segmented_images() method.
+#
+
+# Test when the function is expected to run successfully
+def test_write_segmented_images_successful(temporary_folder, synthetic_binary_image):
+    # Use the provided synthetic binary image
+    seg_binary_img = synthetic_binary_image
+
+    # Specify other parameters
+    folder = temporary_folder
+    file_prefix = 'test_img_'
+    rows_per_img = 5  # Adjust based on the synthetic image
+    downscale = 0.5
+
+    result = write_segmented_images(folder, seg_binary_img, file_prefix, rows_per_img, downscale)
+
+    assert result == 0
+
+
+# Test when there are not enough rows in the image
+def test_write_segmented_images_not_enough_rows(temporary_folder, synthetic_binary_image):
+    # Use the provided synthetic binary image with fewer rows than required
+    seg_binary_img = synthetic_binary_image[:2, :]
+
+    # Specify other parameters
+    folder = temporary_folder
+    file_prefix = 'test_image_'
+    rows_per_img = 5  # Adjust based on the synthetic image
+    downscale = 0.5
+
+    result = write_segmented_images(folder, seg_binary_img, file_prefix, rows_per_img, downscale)
+
+    assert result == SysConfigSIA.ERROR_CODE_NOT_ENOUGH_SEG_IMG_ROWS
+
+
+# Test when there is an error creating the output folder
+def test_write_segmented_images_folder_creation_error(temporary_folder, synthetic_binary_image):
+
+    # Use the provided synthetic binary image
+    seg_binary_img = synthetic_binary_image
+
+    # Specify other parameters
+    folder = 'xyz:/nonexistent/folder'  # This folder does not exist, cannot be created, and will result in an error
+    file_prefix = 'test_image_'
+    rows_per_img = 5  # Adjust based on the synthetic image
+    downscale = 0.5
+
+    result = write_segmented_images(folder, seg_binary_img, file_prefix, rows_per_img, downscale)
+
+    assert result == SysConfigSIA.ERROR_CODE_UNABLE_TO_CREATE_FOLDER
+
+
+
+
+
+
+
+
+
+
+

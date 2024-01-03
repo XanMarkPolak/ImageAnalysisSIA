@@ -36,8 +36,8 @@ class ProcessImagesSIA:
     save_segmented_images = False
     calc_summary_stats = False
 
-    def __init__(self, image_folder, output_folder):
-        self.output_folder = output_folder
+    def __init__(self, image_folder):
+        self.output_folder = SysConfigSIA.OUTPUT_FOLDER
         self.image_folder = image_folder
         self.start_frame_character = SysConfigSIA.FIRST_IMAGE_NAME_FRAME_CHARACTER
         self.end_frame_character = SysConfigSIA.LAST_IMAGE_NAME_FRAME_CHARACTER
@@ -48,7 +48,10 @@ class ProcessImagesSIA:
         self.nir_image_files = []
         self.vis_image_files = []
         self.down_sample = False
-        self.down_sample_factor = SysConfigSIA.DOWNSCALE_FACTOR
+        if 0.1 < SysConfigSIA.DOWNSCALE_FACTOR <= 1:    # Make sure DOWNSCALE_FACTOR is within valid range
+            self.down_sample_factor = SysConfigSIA.DOWNSCALE_FACTOR
+        else:
+            self.down_sample_factor = 1
         self.k1 = 2.0
         self.k2 = 4.0
         self.bad_left_edge = SysConfigSIA.BAD_EDGE_LEFT
@@ -57,12 +60,48 @@ class ProcessImagesSIA:
         self.img_segmentation_algo = "VIS"
         self.config_json_loaded = False
 
-    # Define methods
     def load_json_config_file(self):
+        """
+         Load configuration parameters from a JSON file and assign them to corresponding class attributes.
+
+         Returns:
+             int: 0 if successful, SysConfigSIA.ERROR_CODE_UNABLE_TO_READ_CONFIG_FILE otherwise.
+
+         This method attempts to read a JSON configuration file containing parameters required for the system,
+         specified by `SysConfigSIA.OPERATOR_CONFIG_FILE_JSON`.
+         It checks for the presence of required parameters and assigns them to class attributes if they exist.
+         If any required parameter is missing or if there are file-related errors, the method logs an error
+         and returns SysConfigSIA.ERROR_CODE_UNABLE_TO_READ_CONFIG_FILE.
+         If the configuration is successfully loaded, the method returns 0 to indicate success.
+
+         Example:
+             To load configuration parameters from the default file:
+                 status = obj.load_json_config_file()
+                 if status == 0:
+                    print("Configuration loaded successfully.")
+                 else:
+                    print("Error loading configuration. See error log file for details.")
+         """
+
         file_path = SysConfigSIA.OPERATOR_CONFIG_FILE_JSON
         try:
             with open(file_path, "r") as json_file:
                 config = json.load(json_file)
+
+                # Check for missing parameters
+                required_params = ["IMAGE_SCALE", "LINE_SCAN_RATE", "SAVE_SEGMENTED_IMAGES",
+                                   "CALC_SUMMARY_STATS", "SEGMENT_AIR_AND_SAND", "SYRINGE_PUMP_SPEED",
+                                   "BAD_EDGE_LEFT", "BAD_EDGE_RIGHT", "DOWN_SAMPLE", "K1", "K2",
+                                   "MIN_OBJ_DIAMETER_UM", "SEGMENTATION_ALGO"]
+
+                for param in required_params:
+                    if param not in config:
+                        write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__,
+                                            SysConfigSIA.ERROR_CODE_UNABLE_TO_READ_CONFIG_FILE,
+                                            f"Error reading configuration file. Required parameter {param} missing in "
+                                            f"file {file_path}.")
+                        return SysConfigSIA.ERROR_CODE_UNABLE_TO_READ_CONFIG_FILE
+
                 self.image_scale = config["IMAGE_SCALE"]
                 self.line_scan_rate = config["LINE_SCAN_RATE"]
                 self.save_segmented_images = config["SAVE_SEGMENTED_IMAGES"]
@@ -72,7 +111,6 @@ class ProcessImagesSIA:
                 self.bad_left_edge = config["BAD_EDGE_LEFT"]
                 self.bad_right_edge = config["BAD_EDGE_RIGHT"]
                 self.down_sample = config["DOWN_SAMPLE"]
-
                 # If "DOWN_SAMPLE" flag is true, get the down_sample_factor from SysConfigSIA.
                 # If "DOWN_SAMPLE" flag is false, down sampling is not to be used, so down_sample_factor is set to 1.
                 if self.down_sample:
@@ -83,7 +121,6 @@ class ProcessImagesSIA:
                 self.k2 = config["K2"]
                 self.min_obj_diam_um = config["MIN_OBJ_DIAMETER_UM"]
                 self.img_segmentation_algo = config["SEGMENTATION_ALGO"]
-
                 # Segmentation algorithm by default is "VIS", so if it is not "NIR" (the only other option), set it
                 # to "VIS".
                 if self.img_segmentation_algo != "NIR":
@@ -95,18 +132,35 @@ class ProcessImagesSIA:
             write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__,
                                 SysConfigSIA.ERROR_CODE_UNABLE_TO_READ_CONFIG_FILE,
                                 f"Error reading configuration file. File {file_path} not found.")
+            return SysConfigSIA.ERROR_CODE_UNABLE_TO_READ_CONFIG_FILE
+
         except json.JSONDecodeError as err:
             write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__,
                                 SysConfigSIA.ERROR_CODE_UNABLE_TO_READ_CONFIG_FILE,
                                 f"Error reading configuration file. Error decoding JSON."
                                 f"Reason: {err}")
+            return SysConfigSIA.ERROR_CODE_UNABLE_TO_READ_CONFIG_FILE
+
+        except ValueError as err:
+            write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__,
+                                SysConfigSIA.ERROR_CODE_UNABLE_TO_READ_CONFIG_FILE,
+                                f"Error when trying to convert JSON values to the expected types."
+                                f"Reason: {err}")
+            return SysConfigSIA.ERROR_CODE_UNABLE_TO_READ_CONFIG_FILE
+
+        return 0
 
     def get_file_list(self):
-        self.vis_image_files, self.nir_image_files = get_file_list_and_verify_correct_files_exist(
+        self.vis_image_files, self.nir_image_files, status = get_file_list_and_verify_correct_files_exist(
             self.image_folder, self.start_frame_character, self.end_frame_character, self.first_valid_frame,
             self.last_valid_frame)
+        return status
 
     def segment_images(self):
+        """
+
+        :return:
+        """
         num_of_image_sets = len(self.vis_image_files)
 
         # Use the cv2.IMREAD_UNCHANGED flag to load the image without decoding it
@@ -136,9 +190,14 @@ class ProcessImagesSIA:
 
         try:
             # Attempt to create large 8-bit images for segmented object for entire experiment.  One large
-            # image for bitumen objects and the other for non-bitumen objects.
+            # image for bitumen objects and the other for non-bitumen objects.  The image for non-bitumen objects
+            # is only created if option to segment these objects is set.
             self.experiment_bitumen_binary_img = np.zeros((height * num_of_image_sets, width_roi), dtype=np.uint8)
-            self.experiment_other_binary_img = np.zeros((height * num_of_image_sets, width_roi), dtype=np.uint8)
+            if self.segment_air_and_sand:
+                self.experiment_other_binary_img = np.zeros((height * num_of_image_sets, width_roi), dtype=np.uint8)
+            else:
+                self.experiment_other_binary_img = None
+
         except MemoryError as err:
             write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__,
                                 SysConfigSIA.ERROR_CODE_UNABLE_TO_ALLOCATE_MEMORY_TO_IMAGE,
@@ -185,27 +244,49 @@ class ProcessImagesSIA:
             # returned.  The returned images have values of 255 for object pixels and 0 for background pixels.
             # "self.img_segmentation_algo" specifies which segmentation algorithm is to be used.
             if self.img_segmentation_algo == "NIR":
-                self.experiment_bitumen_binary_img[target_row:target_row + height, :], \
-                self.experiment_other_binary_img[target_row:target_row + height, :] = \
-                    segment_image_set_obj_by_nir(image_vis, image_nir, self.k1, self.k2)
+                dark_res, light_res = segment_image_set_obj_by_nir(image_vis, image_nir, self.segment_air_and_sand,
+                                                                   downscale_factor, self.k1, self.k2)
             elif self.img_segmentation_algo == "VIS":
-                self.experiment_bitumen_binary_img[target_row:target_row + height, :], \
-                self.experiment_other_binary_img[target_row:target_row + height, :] = \
-                    segment_image_set_by_vis_img(image_vis, image_nir, self.k1, self.k2)
+                dark_res, light_res = segment_image_set_by_vis_img(image_vis, image_nir, self.segment_air_and_sand,
+                                                                   self.k1, self.k2)
             else:
                 write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__, SysConfigSIA.ERROR_CODE_UNKNOWN_SEGMENT_ALGO,
                                     f"Unknown segmentation algorithm '{self.img_segmentation_algo}' specified. "
                                     f"Check 'OperatorConfigSIA.json' file.")
+                return SysConfigSIA.ERROR_CODE_UNKNOWN_SEGMENT_ALGO
+
+            if dark_res is not None:
+                self.experiment_bitumen_binary_img[target_row:target_row + height, :] = dark_res
+            if light_res is not None:
+                self.experiment_other_binary_img[target_row:target_row + height, :] = light_res
 
             end_time = time.time()
             elapsed_time = end_time - start_time
             print("        Image", img_num, "elapsed time = ", elapsed_time)
 
-        write_segmented_images(self.output_folder, self.experiment_bitumen_binary_img,
-                               self.experiment_other_binary_img, height / downscale_factor, downscale_factor)
+        return 0
 
-    #        cv2.imwrite("out_dark.png", self.experiment_bitumen_binary_img)
-    #        cv2.imwrite("out_light.png", self.experiment_other_binary_img)
+    def write_out_segmented_images(self):
+        rows_per_img = SysConfigSIA.ROWS_PER_SEG_OUTPUT_IMG
+        downscale_factor = self.down_sample_factor
+
+        if self.experiment_bitumen_binary_img is not None:
+            status_bit_write = write_segmented_images(self.output_folder, self.experiment_bitumen_binary_img,
+                                                      "LS_SEG_BITUMEN_", rows_per_img,
+                                                      downscale_factor)
+
+        if self.segment_air_and_sand and self.experiment_bitumen_binary_img is not None:
+            status_other_write = write_segmented_images(self.output_folder, self.experiment_other_binary_img,
+                                                        "LS_SEG_OTHER_", rows_per_img,
+                                                        downscale_factor)
+        if status_bit_write != 0:
+            return status_bit_write
+        elif status_other_write != 0:
+            return status_other_write
+        else:
+            return 0
+
+
 
     def write_csv_files(self):
         # Configuration file must be loaded in order to calculate object properties in real units that are written
@@ -229,8 +310,8 @@ class ProcessImagesSIA:
             fn_str = self.nir_image_files[0][
                      SysConfigSIA.FIRST_IMAGE_NAME_SAMPLE_CHARACTER:SysConfigSIA.LAST_IMAGE_NAME_SAMPLE_CHARACTER + 1]
 
-            csv_file = folder + "\\" + "LSCAN-Res-" + fn_str + "-Objects.csv"
-            summary_csv_file = folder + "\\" + "LSCAN-Res-" + fn_str + "-Summary.csv"
+            csv_file = folder + "\\" + SysConfigSIA.CSV_FILE_PREFIX + fn_str + "-Objects.csv"
+            summary_csv_file = folder + "\\" + SysConfigSIA.CSV_FILE_PREFIX + fn_str + "-Summary.csv"
             object_properties_to_csv(self.experiment_bitumen_binary_img, self.experiment_other_binary_img,
                                      csv_file, self.image_scale, self.line_scan_rate, self.syringe_pump_speed,
                                      self.down_sample_factor, self.min_obj_diam_um, self.calc_summary_stats,
@@ -250,7 +331,8 @@ def get_file_list_and_verify_correct_files_exist(image_folder, start_frame_chara
     last_valid_frame (int): The last valid frame number, or -1 for no restriction.
 
     Returns:
-    tuple: A tuple containing two lists - the first list is VIS image files, and the second list is NIR image files.
+    tuple: A tuple containing two lists and a status code- the first list is VIS image files,
+    and the second list is NIR image files.
     If any errors occur during the process, None is returned for both lists.
     """
 
@@ -296,19 +378,21 @@ def get_file_list_and_verify_correct_files_exist(image_folder, start_frame_chara
 
     # Check if the folder exists
     if os.path.exists(image_folder):
+        # Get a list of NIR image files
         nir_image_files = [f for f in os.listdir(image_folder) if
-                           f.startswith('LS-NIR-') and frame_in_range(f)]
+                           f.startswith(SysConfigSIA.LS_NIR_PREFIX) and frame_in_range(f)]
+        # Get a list of visual image files
         vis_image_files = [f for f in os.listdir(image_folder) if
-                           f.startswith('LS-VIS-') and frame_in_range(f)]
+                           f.startswith(SysConfigSIA.LS_VIS_PREFIX) and frame_in_range(f)]
     else:
         write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__, SysConfigSIA.ERROR_CODE_IMAGE_FOLDER_MISSING,
                             f"Image folder '{image_folder}' not found.")
-        return None, None
+        return None, None, SysConfigSIA.ERROR_CODE_IMAGE_FOLDER_MISSING
 
     if len(nir_image_files) < 1 or len(vis_image_files) < 1:
         write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__, SysConfigSIA.ERROR_CODE_MISSING_IMAGES,
                             f"VIS or NIR images are missing.")
-        return None, None
+        return None, None, SysConfigSIA.ERROR_CODE_MISSING_IMAGES
 
     # Sort the list using the sorting function
     try:
@@ -317,7 +401,7 @@ def get_file_list_and_verify_correct_files_exist(image_folder, start_frame_chara
         # Handle the error raised by the sort operation
         write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__, SysConfigSIA.ERROR_CODE_BAD_FRAME_NUM,
                             f"Unable to sort NIR image file names. Exception: {e}")
-        return None, None
+        return None, None, SysConfigSIA.ERROR_CODE_BAD_FRAME_NUM
 
     try:
         vis_image_files.sort(key=custom_sort)
@@ -325,13 +409,13 @@ def get_file_list_and_verify_correct_files_exist(image_folder, start_frame_chara
         # Handle the error raised by the sort operation
         write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__, SysConfigSIA.ERROR_CODE_BAD_FRAME_NUM,
                             f"Unable to sort VIS image file names. Exception: {e}")
-        return None, None
+        return None, None, SysConfigSIA.ERROR_CODE_BAD_FRAME_NUM
 
     # Make sure same number of NIR and VIS files
     if len(vis_image_files) != len(nir_image_files):
         write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__, SysConfigSIA.ERROR_CODE_VIS_NIR_MISMATCH,
                             f"Different number of NIR and VIS images.")
-        return None, None
+        return None, None, SysConfigSIA.ERROR_CODE_VIS_NIR_MISMATCH
 
     # Make sure frame numbers match
     match = True
@@ -343,7 +427,7 @@ def get_file_list_and_verify_correct_files_exist(image_folder, start_frame_chara
     if not match:
         write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__, SysConfigSIA.ERROR_CODE_VIS_NIR_MISMATCH,
                             f"Frame numbers of VIS and NIR images do not match.")
-        return None, None
+        return None, None, SysConfigSIA.ERROR_CODE_VIS_NIR_MISMATCH
 
     # If the last frame number in the read files is less than the last frame in the valid frame number specified
     #  in configuration, than write a warning, but continue processing.
@@ -354,7 +438,7 @@ def get_file_list_and_verify_correct_files_exist(image_folder, start_frame_chara
                             f"Warning: The last frame read is lower than the last frame specified.  "
                             f"Continuing process.")
 
-    return vis_image_files, nir_image_files
+    return vis_image_files, nir_image_files, 0
 
 
 def get_object_properties_from_binary_image(binary_image, obj_type, image_scale, line_scan_rate, downscaled_factor,
@@ -468,7 +552,7 @@ def object_properties_to_csv(binary_bitumen_image, binary_non_bitumen_image, csv
 
      """
 
-    if binary_bitumen_image is None or binary_non_bitumen_image is None:
+    if binary_bitumen_image is None:
         write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__, SysConfigSIA.ERROR_CODE_UNABLE_TO_WRITE_CSV_FILE,
                             f"Error.  Unable to write results to CSV file.  "
                             f"Binary image set not passed to object_properties_to_csv() .")
@@ -483,9 +567,13 @@ def object_properties_to_csv(binary_bitumen_image, binary_non_bitumen_image, csv
     bitumen_props_list = get_object_properties_from_binary_image(binary_bitumen_image, "BIT", image_scale,
                                                                  line_scan_rate, downscale_factor, pump_speed,
                                                                  min_obj_diam_um)
-    other_obj_props_list = get_object_properties_from_binary_image(binary_non_bitumen_image, "UNK", image_scale,
-                                                                   line_scan_rate, downscale_factor, pump_speed,
-                                                                   min_obj_diam_um)
+
+    if binary_non_bitumen_image is not None:
+        other_obj_props_list = get_object_properties_from_binary_image(binary_non_bitumen_image, "UNK", image_scale,
+                                                                       line_scan_rate, downscale_factor, pump_speed,
+                                                                       min_obj_diam_um)
+    else:
+        other_obj_props_list = None
 
     # Initially write the results to temporary file "tmp.txt".  This temporary file is created instead of the
     # properly named target CSV file so that in case the program crashes or is killed, the control software
@@ -501,7 +589,8 @@ def object_properties_to_csv(binary_bitumen_image, binary_non_bitumen_image, csv
 
             # Write the data
             writer_obj.writerows(bitumen_props_list)
-            writer_obj.writerows(other_obj_props_list)
+            if other_obj_props_list is not None:
+                writer_obj.writerows(other_obj_props_list)  # write light object as well
     except Exception as e:
         write_error_to_file(SysConfigSIA.ERROR_LOG_FILE, __file__, SysConfigSIA.ERROR_CODE_UNABLE_TO_WRITE_CSV_FILE,
                             f"Error.  Unable to write results to CSV file.  "
@@ -524,49 +613,73 @@ def object_properties_to_csv(binary_bitumen_image, binary_non_bitumen_image, csv
     # Check if summary statistics are to be calculated and written to a CSV file.
     #
     if create_summary_stats and summary_csv_file is not None:
-        num_of_bit_obj = len(bitumen_props_list)
+        avg_diameter_bit = np.nan
+        avg_speed_bit = np.nan
+        sorted_diameters = np.nan
+        cpp_number = np.nan
+        cpp_diameter = np.nan
+        cpp_volume = np.nan
+        num_of_bit_obj = 0
+        avg_diameter_air = np.nan
+        avg_diameter_snd = np.nan
+        avg_speed_air = np.nan
+        avg_speed_snd = np.nan
+        num_air_diameters = 0
+        num_snd_diameters = 0
 
-        # Assuming bitumen_props_list has diameters as the last element, extract all the diameter measurement for
-        # bitumen (bit) objects.
-        diameters_bit = [obj[-1] for obj in bitumen_props_list]
-        avg_diameter_bit = np.mean(diameters_bit)
+        if bitumen_props_list is not None:
+            num_of_bit_obj = len(bitumen_props_list)
 
-        # For ObjClass "AIR", which other_obj_props_list has as the index=4, extract all the diameter measurements
-        # where the diameters are the last element.
-        diameters_air = [obj[-1] for obj in other_obj_props_list if obj[4] == "AIR"]
-        avg_diameter_air = np.mean(diameters_air)
+            if num_of_bit_obj > 0:
+                # Assuming bitumen_props_list has diameters as the last element, extract all the diameter
+                # measurement for bitumen (bit) objects.
+                diameters_bit = [obj[-1] for obj in bitumen_props_list]
+                avg_diameter_bit = np.mean(diameters_bit)
 
-        # For ObjClass "SND", which other_obj_props_list has as the index=4, extract all the diameter measurements
-        # where the diameters are the last element.
-        diameters_snd = [obj[-1] for obj in other_obj_props_list if obj[4] == "SND"]
-        avg_diameter_snd = np.mean(diameters_snd)
+                # Assuming other_obj_props_list has speed as the index=3 element, extract all the speed measurements.
+                speeds_bit = [obj[3] for obj in bitumen_props_list]
+                avg_speed_bit = np.mean(speeds_bit)
 
-        # Assuming other_obj_props_list has speed as the index=3 element, extract all the speed measurements.
-        speeds_bit = [obj[3] for obj in bitumen_props_list]
-        avg_speed_bit = np.mean(speeds_bit)
+                # Convert diameters to a sorted NumPy array
+                sorted_diameters = np.sort(diameters_bit)
 
-        # For ObjClass "AIR", which other_obj_props_list has as the index=4, extract all the speed measurements
-        # which are at index 3.
-        speed_air = [obj[3] for obj in other_obj_props_list if obj[4] == "AIR"]
-        avg_speed_air = np.mean(speed_air)
+                # Calculate cumulative sum
+                cpp_sum_num = np.cumsum(np.ones(num_of_bit_obj))
+                cpp_sum_diam = np.cumsum(sorted_diameters)
+                cpp_sum_vol = np.cumsum(sorted_diameters ** 3)
 
-        # For ObjClass "SND", which other_obj_props_list has as the index=4, extract all the speed measurements
-        # which are at index 3.
-        speed_snd = [obj[3] for obj in other_obj_props_list if obj[4] == "SND"]
-        avg_speed_snd = np.mean(speed_snd)
+                # Calculate cumulative percent passing statistics for bitumen objects
+                cpp_number = 100 * cpp_sum_num / num_of_bit_obj
+                cpp_diameter = 100 * cpp_sum_diam / np.sum(sorted_diameters)
+                cpp_volume = 100 * cpp_sum_vol / np.sum(sorted_diameters ** 3)
 
-        # Convert diameters to a sorted NumPy array
-        sorted_diameters = np.sort(diameters_bit)
+        if other_obj_props_list is not None:
+            num_of_other_obj = len(other_obj_props_list)
 
-        # Calculate cumulative sum
-        cpp_sum_num = np.cumsum(np.ones(num_of_bit_obj))
-        cpp_sum_diam = np.cumsum(sorted_diameters)
-        cpp_sum_vol = np.cumsum(sorted_diameters ** 3)
+            if num_of_other_obj > 0:
+                # For ObjClass "AIR", which other_obj_props_list has as the index=4, extract all the diameter
+                # measurements where the diameters are the last element.
+                diameters_air = [obj[-1] for obj in other_obj_props_list if obj[4] == "AIR"]
+                num_air_diameters = len(diameters_air)
+                if num_air_diameters > 0:
+                    avg_diameter_air = np.mean(diameters_air)
 
-        # Calculate cumulative percent passing
-        cpp_number = 100 * cpp_sum_num / num_of_bit_obj
-        cpp_diameter = 100 * cpp_sum_diam / np.sum(sorted_diameters)
-        cpp_volume = 100 * cpp_sum_vol / np.sum(sorted_diameters ** 3)
+                # For ObjClass "SND", which other_obj_props_list has as the index=4, extract all the diameter
+                # measurements where the diameters are the last element.
+                diameters_snd = [obj[-1] for obj in other_obj_props_list if obj[4] == "SND"]
+                num_snd_diameters = len(diameters_snd)
+                if num_snd_diameters > 0:
+                    avg_diameter_snd = np.mean(diameters_snd)
+
+                # For ObjClass "AIR", which other_obj_props_list has as the index=4, extract all the speed measurements
+                # which are at index 3.
+                speed_air = [obj[3] for obj in other_obj_props_list if obj[4] == "AIR"]
+                avg_speed_air = np.mean(speed_air)
+
+                # For ObjClass "SND", which other_obj_props_list has as the index=4, extract all the speed measurements
+                # which are at index 3.
+                speed_snd = [obj[3] for obj in other_obj_props_list if obj[4] == "SND"]
+                avg_speed_snd = np.mean(speed_snd)
 
         try:
             with open("tmp_sum.txt", 'w', newline='') as file_sum:
@@ -574,10 +687,13 @@ def object_properties_to_csv(binary_bitumen_image, binary_non_bitumen_image, csv
 
                 writer_sum.writerow(["NumOfBitObjects", "AvgDiameter", "AvgSpeed"])
                 writer_sum.writerow([num_of_bit_obj, avg_diameter_bit, avg_speed_bit])
-                writer_sum.writerow(["NumOfSandObjects", "AvgDiameter", "AvgSpeed"])
-                writer_sum.writerow([len(diameters_snd), avg_diameter_snd, avg_speed_snd])
-                writer_sum.writerow(["NumOfAirObjects", "AvgDiameter", "AvgSpeed"])
-                writer_sum.writerow([len(diameters_air), avg_diameter_air, avg_speed_air])
+
+                if other_obj_props_list is not None:
+                    writer_sum.writerow(["NumOfSandObjects", "AvgDiameter", "AvgSpeed"])
+                    writer_sum.writerow([num_snd_diameters, avg_diameter_snd, avg_speed_snd])
+
+                    writer_sum.writerow(["NumOfAirObjects", "AvgDiameter", "AvgSpeed"])
+                    writer_sum.writerow([num_air_diameters, avg_diameter_air, avg_speed_air])
 
                 writer_sum.writerow(["Diameter(um)", "CPP_by_Number(%)", "CPP_by_Diameter(%)", "CPP_by_Volume(%)"])
 
@@ -604,15 +720,44 @@ def object_properties_to_csv(binary_bitumen_image, binary_non_bitumen_image, csv
                                 f"Error.Exception {e} occurred while trying to move tmp_sum.txt to {summary_csv_file}")
 
 
-def write_segmented_images(folder, bitumen_binary_img, light_binary_img, rows_per_img, downscale):
-    # Check if images were passed in.
-    if bitumen_binary_img is None or light_binary_img is None:
-        return -1
+def write_segmented_images(folder, seg_binary_img, file_prefix, rows_per_img, downscale):
+    """
+    Write segmented images to a specified folder.
 
-    height, width = bitumen_binary_img.shape
+    Parameters:
+    - folder (str): The folder where the segmented images will be saved.
+    - seg_binary_img (numpy.ndarray): Binary image containing segmented objects.
+    - file_prefix (str): Prefix to be used for naming the saved images.
+    - rows_per_img (int): Number of rows to include in each segmented image.
+    - downscale (float): Scaling factor that was used for downsizing the images.
+
+    Returns:
+    - int: Status code. 0 for success, error codes for failure.
+
+    The function saves segmented images to the specified folder. It processes the input binary image
+    (`seg_binary_img`) in rows_per_img-sized chunks, potentially resizing them by the specified factor.
+
+    If the specified folder doesn't exist, the function attempts to create it. If folder creation fails, an error
+    is logged, and an appropriate error code is returned.
+
+    The saved images are named using the provided file_prefix and a numeric suffix. For example, if file_prefix is
+    'image_', saved images will be named 'image_0001.png', 'image_0002.png', and so on.
+
+    Example Usage:
+    ```
+    status = write_segmented_images('output_folder', binary_image, 'segment_', 100, 0.5)
+    if status == 0:
+        print("Segmented images successfully saved.")
+    else:
+        print(f"Error occurred with status code: {status}")
+    ```
+
+    """
+
+    height, width = seg_binary_img.shape
     # Check to make sure image has at least enough rows to write out one image
     if height < rows_per_img:
-        return -1
+        return SysConfigSIA.ERROR_CODE_NOT_ENOUGH_SEG_IMG_ROWS
 
     # Check if the folder exists
     if not os.path.exists(folder):
@@ -634,18 +779,18 @@ def write_segmented_images(folder, bitumen_binary_img, light_binary_img, rows_pe
     while src_row + step <= height:
         if downscale == 1.0:
             # The images were not downscaled, so no need to resize.  Simply copy the next 'rows_per_img' rows.
-            single_image_dark = bitumen_binary_img[src_row:src_row + step, :]
-            single_image_light = light_binary_img[src_row:src_row + step, :]
+            single_image = seg_binary_img[src_row:src_row + step, :]
         else:
             # The images were downscaled, so no need to resize back to original size before saving.
-            single_image_dark = cv2.resize(bitumen_binary_img[src_row:src_row + step, :], (int(width / downscale),
-                                                                                           int(rows_per_img)))
-            single_image_light = cv2.resize(light_binary_img[src_row:src_row + step, :], (int(width / downscale),
-                                                                                          int(rows_per_img)))
-        filepath_dark = "LS_SEG_BITUMEN_" + str(filenum).zfill(4) + ".png"
-        filepath_light = "LS_SEG_SAND_AIR_" + str(filenum).zfill(4) + ".png"
-        cv2.imwrite(filepath_dark, single_image_dark)
-        cv2.imwrite(filepath_light, single_image_light)
+            single_image = cv2.resize(seg_binary_img[src_row:src_row + step, :], None, fx=1/downscale, fy=1/downscale,
+                                      interpolation=cv2.INTER_NEAREST)
+
+        filepath = folder + "\\" + file_prefix + str(filenum).zfill(4) + ".png"
+
+        cv2.imwrite(filepath, single_image)
 
         src_row += step
         filenum += 1
+
+    return 0
+

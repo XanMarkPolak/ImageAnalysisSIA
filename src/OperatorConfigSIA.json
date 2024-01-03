@@ -4,11 +4,11 @@
 	"SYRINGE_PUMP_SPEED" :  13.0,
 	"BAD_EDGE_LEFT" : 350,
 	"BAD_EDGE_RIGHT" : 350,
-	"DOWN_SAMPLE" : false,
+	"DOWN_SAMPLE" : true,
 	"SAVE_SEGMENTED_IMAGES" : true,
 	"CALC_SUMMARY_STATS" : true,
 	"SEGMENT_AIR_AND_SAND" : true,
-	"K1" : 2.0,
+	"K1" : 1.5,
 	"K2" : 4.0,
 	"MIN_OBJ_DIAMETER_UM" : 0.0,
 	"SEGMENTATION_ALGO" : "VIS"
