@@ -37,7 +37,7 @@ class ProcessImagesSIA:
     calc_summary_stats = False
 
     def __init__(self, image_folder):
-        self.output_folder = SysConfigSIA.OUTPUT_FOLDER
+        self.output_folder = ".\\"  # Default output folder in case it's missing from JSON.
         self.image_folder = image_folder
         self.start_frame_character = SysConfigSIA.FIRST_IMAGE_NAME_FRAME_CHARACTER
         self.end_frame_character = SysConfigSIA.LAST_IMAGE_NAME_FRAME_CHARACTER
@@ -54,8 +54,8 @@ class ProcessImagesSIA:
             self.down_sample_factor = 1
         self.k1 = 2.0
         self.k2 = 4.0
-        self.bad_left_edge = SysConfigSIA.BAD_EDGE_LEFT
-        self.bad_right_edge = SysConfigSIA.BAD_EDGE_RIGHT
+        self.bad_left_edge = 0
+        self.bad_right_edge = 0
         self.min_obj_diam_um = 0.0
         self.img_segmentation_algo = "VIS"
         self.config_json_loaded = False
@@ -89,7 +89,7 @@ class ProcessImagesSIA:
                 config = json.load(json_file)
 
                 # Check for missing parameters
-                required_params = ["IMAGE_SCALE", "LINE_SCAN_RATE", "SAVE_SEGMENTED_IMAGES",
+                required_params = ["OUTPUT_FOLDER", "IMAGE_SCALE", "LINE_SCAN_RATE", "SAVE_SEGMENTED_IMAGES",
                                    "CALC_SUMMARY_STATS", "SEGMENT_AIR_AND_SAND", "SYRINGE_PUMP_SPEED",
                                    "BAD_EDGE_LEFT", "BAD_EDGE_RIGHT", "DOWN_SAMPLE", "K1", "K2",
                                    "MIN_OBJ_DIAMETER_UM", "SEGMENTATION_ALGO"]
@@ -102,6 +102,7 @@ class ProcessImagesSIA:
                                             f"file {file_path}.")
                         return SysConfigSIA.ERROR_CODE_UNABLE_TO_READ_CONFIG_FILE
 
+                self.output_folder = config["OUTPUT_FOLDER"]
                 self.image_scale = config["IMAGE_SCALE"]
                 self.line_scan_rate = config["LINE_SCAN_RATE"]
                 self.save_segmented_images = config["SAVE_SEGMENTED_IMAGES"]
@@ -158,8 +159,11 @@ class ProcessImagesSIA:
 
     def segment_images(self):
         """
+        Segment the loaded image sets using the specified segmentation algorithm.
+        Cut out the Region of Interest (ROI) and potentially downscale images.
+        Concatenate segmented images into large binary images stored in class attributes.
 
-        :return:
+        :return: Error code (0 if successful, specific error code otherwise).
         """
         num_of_image_sets = len(self.vis_image_files)
 
@@ -207,9 +211,6 @@ class ProcessImagesSIA:
 
         # Iterate through all the loaded images
         for img_num in range(num_of_image_sets):
-            print("Processing Img", img_num)
-            start_time = time.time()
-
             vis_file_path = self.image_folder + "\\" + self.vis_image_files[img_num]
             nir_file_path = self.image_folder + "\\" + self.nir_image_files[img_num]
             img_vis_full = cv2.imread(vis_file_path)
@@ -222,8 +223,8 @@ class ProcessImagesSIA:
                 return SysConfigSIA.ERROR_CODE_UNABLE_TO_LOAD_IMAGE
 
             # Cut out the region of interest (ROI)
-            image_vis = img_vis_full[:, SysConfigSIA.BAD_EDGE_LEFT:(width - SysConfigSIA.BAD_EDGE_RIGHT), :]
-            image_nir = img_nir_full[:, SysConfigSIA.BAD_EDGE_LEFT:(width - SysConfigSIA.BAD_EDGE_RIGHT)]
+            image_vis = img_vis_full[:, self.bad_left_edge:(width - self.bad_right_edge), :]
+            image_nir = img_nir_full[:, self.bad_left_edge:(width - self.bad_right_edge)]
 
             # If "down_sample" option was chosen, the images will be resized to the given downscale factor.
             # For example, a downscale factor of 0.5 would reduce the width and height by 50%.
@@ -260,10 +261,6 @@ class ProcessImagesSIA:
             if light_res is not None:
                 self.experiment_other_binary_img[target_row:target_row + height, :] = light_res
 
-            end_time = time.time()
-            elapsed_time = end_time - start_time
-            print("        Image", img_num, "elapsed time = ", elapsed_time)
-
         return 0
 
     def write_out_segmented_images(self):
@@ -274,19 +271,24 @@ class ProcessImagesSIA:
             status_bit_write = write_segmented_images(self.output_folder, self.experiment_bitumen_binary_img,
                                                       "LS_SEG_BITUMEN_", rows_per_img,
                                                       downscale_factor)
+        else:
+            status_bit_write = SysConfigSIA.ERROR_CODE_NO_SEG_IMAGES_TO_SAVE
 
-        if self.segment_air_and_sand and self.experiment_bitumen_binary_img is not None:
-            status_other_write = write_segmented_images(self.output_folder, self.experiment_other_binary_img,
-                                                        "LS_SEG_OTHER_", rows_per_img,
-                                                        downscale_factor)
+        status_other_write = 0
+        if self.segment_air_and_sand:
+            if self.experiment_bitumen_binary_img is not None:
+                status_other_write = write_segmented_images(self.output_folder, self.experiment_other_binary_img,
+                                                            "LS_SEG_OTHER_", rows_per_img,
+                                                            downscale_factor)
+            else:
+                status_other_write = SysConfigSIA.ERROR_CODE_NO_SEG_IMAGES_TO_SAVE
+
         if status_bit_write != 0:
             return status_bit_write
         elif status_other_write != 0:
             return status_other_write
         else:
             return 0
-
-
 
     def write_csv_files(self):
         # Configuration file must be loaded in order to calculate object properties in real units that are written

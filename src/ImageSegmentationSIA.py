@@ -49,7 +49,7 @@ def segment_image_set_obj_by_nir(image_vis, image_nir, segment_air_and_sand, dow
      10. According to intensity of object pixels in RGB image, classify the image as bitumen or other.
      10. Create a new binary image for bitumen objects.
      11. Create a new binary image for non-bitumen objects.
-     11. Return the two final binary images with detected objects.
+     12. Return the two final binary images with detected objects.
 
      Note:
      - The function utilizes custom functions from the ImageProcSupport module for background detection and corrections.

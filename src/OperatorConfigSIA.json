@@ -1,15 +1,43 @@
 {	
+	"OUTPUT_FOLDER" : "C:\\SIA_V2\\Results",
+	"COMMENT_OUTPUT_FOLDER" : "Folder where the image analysis results will be written.",
+
 	"IMAGE_SCALE" : 7.797271,
+	"COMMENT_IMAGE_SCALE" : "This parameter is the calibrated scale of the image pixels in the camera image, given microns per pixel.",
+
 	"LINE_SCAN_RATE" : 4000,
+	"COMMENT_LINE_SCAN_RATE" : "The scan speed of the LineScan camera in scans per second.",
+
 	"SYRINGE_PUMP_SPEED" :  13.0,
+	"COMMENT_SYRINGE_PUMP_SPEED" : "The calibrated speed at which the syringe pump moves the fluid up the glass viewing column, given in millimeters per second.",
+
 	"BAD_EDGE_LEFT" : 350,
+	"COMMENT_BAD_EDGE_LEFT" : "How many pixels in each image are to be ignored from the left side.  Pixels close to the left and right side of the image may not contain slurry, and also move at different speed than the centre of the image (as shown by Computational Fluid Dynamics analysis), and so should be cut out from the analysis.",
+
 	"BAD_EDGE_RIGHT" : 350,
+	"COMMENT_BAD_EDGE_RIGHT" : "How many pixels in each image are to be ignored from the right side.",
+
 	"DOWN_SAMPLE" : true,
+	"COMMENT_DOWN_SAMPLE" : "An option to down-sample the image before processing it.    Downsampling provides a significant performance boost, as shown in section (typically by half along each axis)",
+
 	"SAVE_SEGMENTED_IMAGES" : true,
+	"COMMENT_SAVE_SEGMENTED_IMAGES" : "An option to save the segmented images",
+
 	"CALC_SUMMARY_STATS" : true,
-	"SEGMENT_AIR_AND_SAND" : true,
+	"COMMENT_CALC_SUMMARY_STATS" : "An option to calculate and save summary statistics in a CSV file.",
+
+	"SEGMENT_AIR_AND_SAND" : false,
+	"COMMENT_SEGMENT_AIR_AND_SAND" : "An option to segment air and sand objects as well as bitumen.",
+
 	"K1" : 1.5,
+	"COMMENT_K1" : "Threshold for the first pass through a Gaussian background model.",
+
 	"K2" : 4.0,
+	"COMMENT_K2" : "Threshold for the second pass through a Gaussian background model.",
+
 	"MIN_OBJ_DIAMETER_UM" : 0.0,
-	"SEGMENTATION_ALGO" : "VIS"
+	"COMMENT_MIN_OBJ_DIAMETER_UM" : "The smallest diameter object to be included in the results.",
+
+	"SEGMENTATION_ALGO" : "VIS",
+	"COMMENT_SEGMENTATION_ALGO" : "Segmentation algorithm to be used for image processing (VIS or NIR)."
 }
